@@ -1,4 +1,5 @@
-import { ahora, uid, calcularTotales, consolidar, montoEnLetras, validarCliente, armarCliente } from "./utils.js";
+import { ahora, uid, calcularTotales, consolidar, montoEnLetras, validarCliente, armarCliente, soles } from "./utils.js";
+import { DISTRITOS_REPARTO, PEDIDO_MINIMO_DELIVERY, METODOS_ONLINE } from "./data.js";
 
 /* Reglas del negocio en un solo lugar.
    Las usa el SERVIDOR (server/server.js) y también el modo demo sin servidor.
@@ -6,7 +7,8 @@ import { ahora, uid, calcularTotales, consolidar, montoEnLetras, validarCliente,
 
 export const ESTADO_INICIAL = {
   productos: [],     // la carta: {id, cat, nombre, precio, desc, disponible, foto, arte, tags}
-  comandas: [],      // {id, mesa, items, nota, origen: "qr"|"mozo", estado, creado}
+  comandas: [],      // {id, mesa | null, web?, items, nota, origen: "qr"|"mozo"|"web", estado, creado, comprobanteId?}
+                     // web = {codigo, tipo: "delivery"|"recojo", nombre, telefono, direccion, distrito, referencia}
   solicitudes: [],   // {id, mesa, tipo: "mozo"|"cuenta", datos, creado}
   comprobantes: [],  // boletas y facturas emitidas
   correlativos: { B001: 0, F001: 0 },
@@ -17,21 +19,57 @@ export const ESTADO_INICIAL = {
    Una comanda sin comprobanteId está "pendiente de pago" (no aparece en cocina).
    Al emitir la boleta/factura, sus comandas reciben comprobanteId y pasan a cocina. */
 export const porPagar = (c) => !c.comprobanteId;
-const porPagarDe = (e, mesa) => e.comandas.filter((c) => c.mesa === mesa && porPagar(c));
+const porPagarDe = (e, mesa) => e.comandas.filter((c) => mesa && c.mesa === mesa && porPagar(c));
+export const ESTADOS_VALIDOS = ["nuevo", "preparando", "listo", "en_camino", "entregado"];
+
+// Nombre y precio se toman de la carta (nunca del celular) para que nadie cambie precios
+function limpiarItems(e, items) {
+  if (!Array.isArray(items) || !items.length) throw new Error("Pedido vacío");
+  return items.map((i) => {
+    const p = e.productos.find((x) => x.id === i.id);
+    if (!p || !p.disponible) throw new Error(`"${(p && p.nombre) || i.nombre || i.id}" ya no está disponible.`);
+    const cant = Math.floor(Number(i.cant));
+    if (!(cant > 0 && cant <= 50)) throw new Error("Cantidad inválida.");
+    return { id: p.id, nombre: p.nombre, precio: p.precio, cant };
+  });
+}
+
+// Arma la boleta/factura (valida RUC/DNI, numera la serie). No cambia el estado.
+function crearComprobante(e, { items, datosCliente, pago: p = {}, origen, mesa = null, web = null }) {
+  const tot = calcularTotales(items);
+  const dc = { tipo: "boleta", doc: "", nombre: "", direccion: "", ...(datosCliente || {}) };
+  const err = validarCliente(dc, tot.total);
+  if (err) throw new Error(err);
+  const tc = dc.tipo === "factura" ? "factura" : "boleta";
+  const recibido = Math.max(Number(p.recibido) || tot.total, tot.total);
+  const pago = { metodo: String(p.metodo || "Efectivo"), recibido, vuelto: Math.round((recibido - tot.total) * 100) / 100,
+    operacion: p.operacion ? String(p.operacion).slice(0, 30) : undefined };
+  const serie = tc === "factura" ? "F001" : "B001";
+  const numero = (e.correlativos[serie] || 0) + 1;
+  const comp = {
+    id: uid(), tipo: tc, serie, numero: String(numero).padStart(8, "0"),
+    fecha: ahora(), mesa, cliente: armarCliente(dc), items, ...tot, pago, origen,
+    letras: montoEnLetras(tot.total), ...(web ? { web: { codigo: web.codigo, tipo: web.tipo } } : {}),
+  };
+  return { comp, correlativos: { ...e.correlativos, [serie]: numero } };
+}
+
+// Código corto para seguir un pedido por internet (sin letras que se confunden)
+function codigoPedido(e) {
+  const letras = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  for (;;) {
+    let c = "";
+    for (let i = 0; i < 6; i++) c += letras[Math.floor(Math.random() * letras.length)];
+    if (!e.comandas.some((x) => x.web && x.web.codigo === c)) return c;
+  }
+}
 
 export function aplicar(e, { tipo, datos = {} }) {
   switch (tipo) {
     case "enviarACocina": {
       const { mesa, items, nota, origen } = datos;
-      if (!mesa || !Array.isArray(items) || !items.length) throw new Error("Pedido vacío");
-      // Nombre y precio se toman de la carta (nunca del celular) para que nadie cambie precios
-      const limpios = items.map((i) => {
-        const p = e.productos.find((x) => x.id === i.id);
-        if (!p || !p.disponible) throw new Error(`"${(p && p.nombre) || i.nombre || i.id}" ya no está disponible.`);
-        const cant = Math.floor(Number(i.cant));
-        if (!(cant > 0 && cant <= 50)) throw new Error("Cantidad inválida.");
-        return { id: p.id, nombre: p.nombre, precio: p.precio, cant };
-      });
+      if (!mesa) throw new Error("Falta la mesa.");
+      const limpios = limpiarItems(e, items);
       const comanda = {
         id: uid(), mesa, items: limpios, nota: String(nota || "").slice(0, 200),
         origen: origen === "mozo" ? "mozo" : "qr", estado: "nuevo", creado: ahora(),
@@ -40,10 +78,11 @@ export function aplicar(e, { tipo, datos = {} }) {
     }
     case "cambiarEstado": {
       const { id, estado } = datos;
-      if (!["nuevo", "preparando", "listo", "entregado"].includes(estado)) throw new Error("Estado inválido.");
+      if (!ESTADOS_VALIDOS.includes(estado)) throw new Error("Estado inválido.");
       const actual = e.comandas.find((c) => c.id === id);
       if (!actual) throw new Error("La comanda ya no existe.");
       if (porPagar(actual)) throw new Error("Esta comanda aún no está pagada: cocina la prepara cuando se cobre.");
+      if (estado === "en_camino" && !(actual.web && actual.web.tipo === "delivery")) throw new Error("Solo un delivery puede salir en camino.");
       // al entregarla, sale de las pantallas (en la base de datos queda como "entregado")
       if (estado === "entregado") return { estado: { ...e, comandas: e.comandas.filter((c) => c.id !== id) } };
       return { estado: { ...e, comandas: e.comandas.map((c) => (c.id === id ? { ...c, estado, [estado]: ahora() } : c)) } };
@@ -63,33 +102,48 @@ export function aplicar(e, { tipo, datos = {} }) {
       const { mesa, datosCliente, origen } = datos;
       const items = consolidar(porPagarDe(e, mesa));
       if (!items.length) throw new Error("La mesa no tiene pedidos pendientes de pago.");
-      const tot = calcularTotales(items);
-      const dc = { tipo: "boleta", doc: "", nombre: "", direccion: "", ...(datosCliente || {}) };
-      const err = validarCliente(dc, tot.total);   // RUC/DNI se validan aquí (también en el servidor)
-      if (err) throw new Error(err);
-      const tc = dc.tipo === "factura" ? "factura" : "boleta";
-      const cliente = armarCliente(dc);
-      const p = datos.pago || {};
-      const recibido = Math.max(Number(p.recibido) || tot.total, tot.total);
-      const pago = { metodo: String(p.metodo || "Efectivo"), recibido, vuelto: Math.round((recibido - tot.total) * 100) / 100,
-        operacion: p.operacion ? String(p.operacion).slice(0, 30) : undefined };
-      const serie = tc === "factura" ? "F001" : "B001";
-      const numero = (e.correlativos[serie] || 0) + 1;
-      const comp = {
-        id: uid(), tipo: tc, serie, numero: String(numero).padStart(8, "0"),
-        fecha: ahora(), mesa, cliente, items, ...tot, pago, origen,
-        letras: montoEnLetras(tot.total),
-      };
+      const { comp, correlativos } = crearComprobante(e, { items, datosCliente, pago: datos.pago, origen, mesa });
       return {
         estado: {
           ...e,
-          correlativos: { ...e.correlativos, [serie]: numero },
+          correlativos,
           comprobantes: [comp, ...e.comprobantes],
           // las comandas pagadas pasan a cocina (el cronómetro de cocina empieza al pagar)
           comandas: e.comandas.map((c) => (c.mesa === mesa && porPagar(c) ? { ...c, comprobanteId: comp.id, pagadoEn: comp.fecha } : c)),
           solicitudes: e.solicitudes.filter((s) => s.mesa !== mesa),
         },
         resultado: comp,
+      };
+    }
+    case "pedidoWeb": {
+      // Pedido por internet: se paga al pedir y pasa directo a cocina (primero se paga)
+      const { items, nota, entrega = {}, datosCliente, pago = {} } = datos;
+      const limpios = consolidar([{ items: limpiarItems(e, items) }]);   // une productos repetidos
+      const tipo = entrega.tipo === "delivery" ? "delivery" : "recojo";
+      const nombre = String(entrega.nombre || "").trim().slice(0, 80);
+      const telefono = String(entrega.telefono || "").replace(/\D/g, "");
+      if (nombre.length < 2) throw new Error("Escribe tu nombre.");
+      if (!/^9\d{8}$/.test(telefono)) throw new Error("El celular debe tener 9 dígitos y empezar con 9.");
+      let direccion = "", distrito = "", referencia = "";
+      if (tipo === "delivery") {
+        distrito = String(entrega.distrito || "");
+        direccion = String(entrega.direccion || "").trim().slice(0, 200);
+        referencia = String(entrega.referencia || "").trim().slice(0, 200);
+        if (!DISTRITOS_REPARTO.includes(distrito)) throw new Error("Elige un distrito de reparto.");
+        if (direccion.length < 5) throw new Error("Escribe la dirección de entrega.");
+        if (calcularTotales(limpios).total < PEDIDO_MINIMO_DELIVERY)
+          throw new Error(`El pedido mínimo para delivery es ${soles(PEDIDO_MINIMO_DELIVERY)}.`);
+      }
+      if (!METODOS_ONLINE.includes(pago.metodo)) throw new Error("Elige cómo pagar: " + METODOS_ONLINE.join(", ") + ".");
+      const web = { codigo: codigoPedido(e), tipo, nombre, telefono, direccion, distrito, referencia };
+      const { comp, correlativos } = crearComprobante(e, { items: limpios, datosCliente, pago, origen: "web", web });
+      const comanda = {
+        id: uid(), mesa: null, web, items: limpios, nota: String(nota || "").slice(0, 200),
+        origen: "web", estado: "nuevo", creado: comp.fecha, comprobanteId: comp.id, pagadoEn: comp.fecha,
+      };
+      return {
+        estado: { ...e, correlativos, comprobantes: [comp, ...e.comprobantes], comandas: [...e.comandas, comanda] },
+        resultado: { codigo: web.codigo, comprobante: comp, comanda },
       };
     }
     case "calificar": {
@@ -142,10 +196,23 @@ export function vistaPublica(e, mesa) {
   return {
     ...ESTADO_INICIAL,
     productos: e.productos.filter((p) => p.disponible),
-    comandas: e.comandas.filter((c) => c.mesa === mesa),
-    solicitudes: e.solicitudes.filter((s) => s.mesa === mesa),
+    comandas: mesa ? e.comandas.filter((c) => c.mesa === mesa) : [],
+    solicitudes: mesa ? e.solicitudes.filter((s) => s.mesa === mesa) : [],
+  };
+}
+
+/* Seguimiento de un pedido por internet (solo quien tiene el código lo ve).
+   Devuelve null si ya fue entregado o no existe. */
+export function vistaPedidoWeb(e, codigo) {
+  const c = e.comandas.find((x) => x.web && x.web.codigo === String(codigo || "").toUpperCase());
+  if (!c) return null;
+  const comp = e.comprobantes.find((x) => x.id === c.comprobanteId) || null;
+  return {
+    codigo: c.web.codigo, tipo: c.web.tipo, estado: c.estado, creado: c.creado, items: c.items,
+    total: calcularTotales(c.items).total, nombre: c.web.nombre, distrito: c.web.distrito, direccion: c.web.direccion,
+    comprobante: comp,
   };
 }
 
 // Acciones que un cliente puede hacer desde su celular sin clave
-export const ACCIONES_PUBLICAS = ["enviarACocina", "solicitar", "emitir", "calificar"];
+export const ACCIONES_PUBLICAS = ["enviarACocina", "solicitar", "emitir", "calificar", "pedidoWeb"];

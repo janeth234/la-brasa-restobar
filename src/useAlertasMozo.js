@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from "react";
    - "mozo":    una mesa llama al mozo          -> botón Atendido
    - "cuenta":  una mesa pide pagar en caja     -> botón Atendido
    - "nuevo":   una mesa pidió por QR           -> botón Visto (se recuerda en este dispositivo)
+   - Los pedidos por internet listos también avisan (Despachar / Entregado)
    Cuando aparece una alerta nueva: sonido, vibración (celular) y notificación del sistema
    si el mozo las activó con el botón "Activar alertas". */
 
@@ -45,11 +46,16 @@ export function useAlertasMozo(pos, activo) {
 
   // Armar la lista de alertas a partir de los datos en tiempo real
   const alertas = [
-    ...pos.comandas.filter((c) => c.comprobanteId && c.estado === "listo").map((c) => ({
-      id: "listo-" + c.id, tipo: "listo", mesa: c.mesa, desde: c.listo || c.pagadoEn || c.creado, urgente: true,
-      texto: `Mesa ${c.mesa}: pedido LISTO para servir`, detalle: c.items.map((i) => `${i.cant}× ${i.nombre}`).join(", "),
-      accion: "Entregado", hacer: () => pos.cambiarEstado(c.id, "entregado"),
-    })),
+    ...pos.comandas.filter((c) => c.comprobanteId && c.estado === "listo").map((c) => {
+      const w = c.web, delivery = w && w.tipo === "delivery";
+      return {
+        id: "listo-" + c.id, tipo: "listo", mesa: w ? "WEB" : c.mesa, desde: c.listo || c.pagadoEn || c.creado, urgente: true,
+        texto: !w ? `Mesa ${c.mesa}: pedido LISTO para servir`
+          : delivery ? `Delivery #${w.codigo} LISTO: entregar al repartidor (${w.distrito})` : `Recojo #${w.codigo} LISTO: el cliente ${w.nombre} viene a recogerlo`,
+        detalle: c.items.map((i) => `${i.cant}× ${i.nombre}`).join(", "),
+        accion: delivery ? "Despachar" : "Entregado", hacer: () => pos.cambiarEstado(c.id, delivery ? "en_camino" : "entregado"),
+      };
+    }),
     ...pos.solicitudes.map((s) => ({
       id: "sol-" + s.id, tipo: s.tipo, mesa: s.mesa, desde: s.creado, urgente: s.tipo === "mozo",
       texto: s.tipo === "cuenta" ? `Mesa ${s.mesa} quiere pagar en caja` : `Mesa ${s.mesa} llama al mozo`,

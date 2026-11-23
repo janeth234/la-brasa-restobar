@@ -16,7 +16,9 @@ export function TicketPapel({ comp }) {
       <p className="c"><b>{comp.serie}-{comp.numero}</b></p>
       <hr />
       <p>Fecha: {fechaHora(comp.fecha)}</p>
-      <p>Mesa: {comp.mesa}</p>
+      {comp.web
+        ? <p>Pedido web: #{comp.web.codigo} ({comp.web.tipo === "delivery" ? "delivery" : "recojo"})</p>
+        : <p>Mesa: {comp.mesa}</p>}
       <p>{comp.cliente.tipoDoc === "RUC" ? "RUC" : "DNI"}: {comp.cliente.doc}</p>
       <p>{comp.tipo === "factura" ? "Razón social" : "Cliente"}: {comp.cliente.nombre}</p>
       {comp.cliente.direccion && <p>Dirección: {comp.cliente.direccion}</p>}

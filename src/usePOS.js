@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { aplicar, ESTADO_INICIAL } from "./logica.js";
+import { aplicar, ESTADO_INICIAL, vistaPedidoWeb } from "./logica.js";
 import { PRODUCTOS_INICIALES } from "./data.js";
 
 /* Conexión con los datos del restobar.
@@ -47,7 +47,7 @@ export function usePOS({ rol, mesa }) {
     }
     if (modo !== "servidor" || rol === "ninguno") return undefined;
 
-    const qs = rol === "cliente" ? `mesa=${encodeURIComponent(mesa)}` : `clave=${encodeURIComponent(clave)}`;
+    const qs = rol === "cliente" ? `mesa=${encodeURIComponent(mesa)}` : rol === "web" ? "web=1" : `clave=${encodeURIComponent(clave)}`;
     let fuente = null, vivo = true;
     fetch(`/api/estado?${qs}`)
       .then((r) => {
@@ -125,6 +125,17 @@ export function usePOS({ rol, mesa }) {
     calificar: (m, estrellas, comentario, compId) => enSegundoPlano("calificar", { mesa: m, estrellas, comentario, compId }),
     reiniciar: () => enSegundoPlano("reiniciar"),
     emitir: (datos) => accion("emitir", datos),                        // devuelve el comprobante
+    pedidoWeb: (datos) => accion("pedidoWeb", datos),                  // devuelve {codigo, comprobante}
+    // Seguimiento de un pedido por internet; null si ya se entregó o no existe
+    seguirPedido: async (codigo) => {
+      if (modoRef.current === "servidor") {
+        const r = await fetch(`/api/pedido/${encodeURIComponent(codigo)}`);
+        if (r.status === 404) return null;
+        if (!r.ok) throw new Error("No se pudo consultar el pedido");
+        return r.json();
+      }
+      return vistaPedidoWeb(estadoRef.current, codigo);
+    },
     guardarProducto: (producto) => accion("guardarProducto", { producto }),
     eliminarProducto: (id) => accion("eliminarProducto", { id }),
     subirFoto, quitarFoto,

@@ -33,17 +33,19 @@ export default function VistaCocina({ pos }) {
               return (
                 <article key={c.id} className={"ticket-cocina" + (tarde ? " tarde" : "")}>
                   <header>
-                    <b>Mesa {c.mesa}</b>
+                    <b>{c.web ? `${c.web.tipo === "delivery" ? "Delivery" : "Recojo"} #${c.web.codigo}` : `Mesa ${c.mesa}`}</b>
                     <span className="reloj">{reloj(desde)}</span>
                   </header>
-                  <p className="origen">Pagado · {c.origen === "qr" ? "pedido por QR" : "tomado por el mozo"}</p>
+                  <p className="origen">Pagado · {c.web ? "pedido por internet" : c.origen === "qr" ? "pedido por QR" : "tomado por el mozo"}</p>
                   <ul>
                     {c.items.map((i) => (
                       <li key={i.id}><b>{i.cant}×</b> {i.nombre}</li>
                     ))}
                   </ul>
                   {c.nota && <p className="nota">Nota: {c.nota}</p>}
-                  <button className="btn" onClick={() => pos.cambiarEstado(c.id, siguiente)}>{accion}</button>
+                  {estado === "listo" && c.web && c.web.tipo === "delivery"
+                    ? <button className="btn" onClick={() => pos.cambiarEstado(c.id, "en_camino")}>Despachar (en camino)</button>
+                    : <button className="btn" onClick={() => pos.cambiarEstado(c.id, siguiente)}>{accion}</button>}
                 </article>
               );
             })}

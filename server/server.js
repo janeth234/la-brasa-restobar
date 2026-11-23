@@ -4,6 +4,8 @@
    - API:
        GET    /api/info                 -> ¿hay servidor? + dirección para los QR
        GET    /api/estado?mesa=7        -> cliente: carta + su mesa          (sin clave)
+       GET    /api/estado?web=1         -> página de pedidos por internet: solo la carta
+       GET    /api/pedido/:codigo       -> seguimiento de un pedido por internet
        GET    /api/estado?clave=…       -> personal: todo                    (con clave)
        GET    /api/stream?mesa=7|clave= -> cambios en tiempo real (Server-Sent Events)
        POST   /api/accion  {tipo,datos} -> enviarACocina, emitir, guardarProducto…
@@ -18,7 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { aplicar, vistaPublica, ACCIONES_PUBLICAS } from "../src/logica.js";
+import { aplicar, vistaPublica, vistaPedidoWeb, ACCIONES_PUBLICAS } from "../src/logica.js";
 import { MESAS, METODOS_ONLINE } from "../src/data.js";
 import { abrirBaseDeDatos } from "./db.js";
 import { ollama, revisarOllama, preguntarOllama } from "./ollama.js";
@@ -30,7 +32,7 @@ const CLAVE = process.env.CLAVE_PERSONAL || "1234";
 
 const db = await abrirBaseDeDatos();
 let estado = await db.cargar();
-const conectados = new Set();   // {res, mesa}  mesa = null -> personal
+const conectados = new Set();   // {res, rol: "personal" | "mesa" | "web", mesa}
 await revisarOllama();
 setInterval(revisarOllama, 60000);   // si enciendes Ollama después, se conecta solo
 
@@ -45,9 +47,10 @@ function puedeUsarBot(ip) {
 }
 
 /* ---------- utilidades ---------- */
-const vistaPara = (mesa) => (mesa ? vistaPublica(estado, mesa) : estado);
+// Qué datos ve cada conexión: el personal todo; una mesa, solo lo suyo; la página web, solo la carta
+const vistaPara = (rol, mesa) => (rol === "personal" ? estado : vistaPublica(estado, rol === "mesa" ? mesa : null));
 function difundir() {
-  for (const c of conectados) c.res.write(`data: ${JSON.stringify(vistaPara(c.mesa))}\n\n`);
+  for (const c of conectados) c.res.write(`data: ${JSON.stringify(vistaPara(c.rol, c.mesa))}\n\n`);
 }
 function ipLocal() {
   for (const lista of Object.values(os.networkInterfaces()))
@@ -118,16 +121,24 @@ const server = http.createServer(async (req, res) => {
     if (ruta === "/api/estado" && req.method === "GET") {
       const mesa = mesaValida(url.searchParams.get("mesa"));
       if (mesa) return json(res, 200, vistaPublica(estado, mesa));
+      if (url.searchParams.get("web")) return json(res, 200, vistaPublica(estado, null));
       if (!esPersonal(req, url)) return json(res, 401, { error: "Clave del personal requerida." });
       return json(res, 200, estado);
     }
 
+    const seguir = ruta.match(/^\/api\/pedido\/([A-Za-z0-9]{6})$/);
+    if (seguir && req.method === "GET") {
+      const v = vistaPedidoWeb(estado, seguir[1]);
+      return v ? json(res, 200, v) : json(res, 404, { error: "Pedido entregado o no encontrado." });
+    }
+
     if (ruta === "/api/stream") {
       const mesa = mesaValida(url.searchParams.get("mesa"));
-      if (!mesa && !esPersonal(req, url)) return json(res, 401, { error: "Clave del personal requerida." });
+      const rol = mesa ? "mesa" : url.searchParams.get("web") ? "web" : "personal";
+      if (rol === "personal" && !esPersonal(req, url)) return json(res, 401, { error: "Clave del personal requerida." });
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive", "X-Accel-Buffering": "no" });
-      const c = { res, mesa };
-      res.write(`data: ${JSON.stringify(vistaPara(mesa))}\n\n`);
+      const c = { res, rol, mesa };
+      res.write(`data: ${JSON.stringify(vistaPara(rol, mesa))}\n\n`);
       conectados.add(c);
       const ping = setInterval(() => res.write(": ping\n\n"), 25000);
       req.on("close", () => { clearInterval(ping); conectados.delete(c); });
@@ -138,11 +149,16 @@ const server = http.createServer(async (req, res) => {
       const accion = await leerCuerpo(req, 200000);
       const personal = esPersonal(req, url);
       let mesaCliente = null;
+      if (!personal && accion.tipo === "pedidoWeb") {
+        // Pedido por internet: sin mesa; la lógica exige pago en línea y valida todo
+        const resultado = await enCola(() => ejecutar(accion));
+        return json(res, 200, { resultado: { codigo: resultado.codigo, comprobante: resultado.comprobante } });
+      }
       if (!personal) {
         // Un cliente (QR) solo puede hacer estas acciones y solo para su mesa
         mesaCliente = mesaValida(req.headers["x-mesa"]);
         const d = accion.datos || {};
-        if (!ACCIONES_PUBLICAS.includes(accion.tipo) || !mesaCliente || d.mesa !== mesaCliente)
+        if (!ACCIONES_PUBLICAS.includes(accion.tipo) || accion.tipo === "pedidoWeb" || !mesaCliente || d.mesa !== mesaCliente)
           return json(res, 403, { error: "No autorizado." });
         if (accion.tipo === "enviarACocina") d.origen = "qr";
         if (accion.tipo === "emitir") {
@@ -151,7 +167,7 @@ const server = http.createServer(async (req, res) => {
         }
       }
       const resultado = await enCola(() => ejecutar(accion));
-      return json(res, 200, { estado: vistaPara(mesaCliente), resultado });
+      return json(res, 200, { estado: personal ? estado : vistaPublica(estado, mesaCliente), resultado });
     }
 
     const foto = ruta.match(/^\/api\/fotos\/([^/]+)$/);

@@ -6,7 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { ESTADO_INICIAL } from "../src/logica.js";
-import { PRODUCTOS_INICIALES, CATEGORIAS_BASE, MESAS, IGV } from "../src/data.js";
+import { PRODUCTOS_INICIALES, CATEGORIAS_BASE, MESAS, IGV, DISTRITOS_REPARTO } from "../src/data.js";
 import { calcularTotales, montoEnLetras, armarCliente } from "../src/utils.js";
 
 const DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -89,6 +89,7 @@ async function abrirPostgres(url) {
   await pool.query(fs.readFileSync(path.join(DIR, "schema.sql"), "utf8"));
   await transaccion(async (q) => {
     for (const m of MESAS) await q("INSERT INTO mesas (id) VALUES ($1) ON CONFLICT (id) DO NOTHING", [Number(m)]);
+    for (const dz of DISTRITOS_REPARTO) await q("INSERT INTO distritos_reparto (nombre) VALUES ($1) ON CONFLICT (nombre) DO NOTHING", [dz]);
     const { rows: [{ n }] } = await q("SELECT count(*)::int AS n FROM productos");
     if (n === 0) {
       for (const c of CATEGORIAS_BASE) await idCategoria(q, c);
@@ -141,11 +142,15 @@ async function abrirPostgres(url) {
           ORDER BY c.orden, p.orden`),
         pool.query(`
           SELECT co.id, co.mesa_id, co.estado, co.origen, co.nota, co.creado, co.comprobante_id, cp.fecha_emision AS pagado_en,
+                 pw.codigo AS web_codigo, pw.tipo_entrega, pw.nombre_contacto, pw.telefono, pw.direccion, pw.referencia,
+                 dr.nombre AS distrito,
                  COALESCE((SELECT json_agg(json_build_object('id', ci.producto_id, 'nombre', p.nombre,
                            'precio', ci.precio_unitario, 'cant', ci.cantidad) ORDER BY p.nombre)
                            FROM comanda_items ci JOIN productos p ON p.id = ci.producto_id
                            WHERE ci.comanda_id = co.id), '[]'::json) AS items
           FROM comandas co LEFT JOIN comprobantes cp ON cp.id = co.comprobante_id
+          LEFT JOIN pedidos_web pw ON pw.id = co.pedido_web_id
+          LEFT JOIN distritos_reparto dr ON dr.id = pw.distrito_id
           WHERE co.estado <> 'entregado'      -- pendientes de pago y las que cocina aún no entrega
           ORDER BY co.creado`),
         pool.query(`
@@ -154,7 +159,7 @@ async function abrirPostgres(url) {
           FROM solicitudes s LEFT JOIN clientes cl ON cl.id = s.cliente_id ORDER BY s.creado`),
         pool.query("SELECT serie, ultimo_numero FROM series"),
         pool.query(`
-          SELECT v.id, v.serie, v.numero, v.tipo_comprobante, v.fecha_emision, v.mesa_id, v.origen,
+          SELECT v.id, v.serie, v.numero, v.tipo_comprobante, v.fecha_emision, v.mesa_id, v.origen, v.codigo_web, v.tipo_entrega,
                  v.tipo_documento, v.numero_documento, v.cliente, v.direccion,
                  mp.nombre AS metodo, pg.monto, pg.monto_recibido, pg.numero_operacion,
                  COALESCE((SELECT json_agg(json_build_object('id', d.producto_id, 'nombre', d.descripcion,
@@ -178,8 +183,10 @@ async function abrirPostgres(url) {
           tags: r.tags || [], foto: urlFoto(r.id, num(r.foto_version) || 0),
         })),
         comandas: com.rows.map((r) => ({
-          id: r.id, mesa: String(r.mesa_id), estado: r.estado, origen: r.origen, nota: r.nota, creado: iso(r.creado), items: items(r.items),
+          id: r.id, mesa: r.mesa_id ? String(r.mesa_id) : null, estado: r.estado, origen: r.origen, nota: r.nota, creado: iso(r.creado), items: items(r.items),
           ...(r.comprobante_id ? { comprobanteId: r.comprobante_id, pagadoEn: iso(r.pagado_en) } : {}),
+          ...(r.web_codigo ? { web: { codigo: r.web_codigo.trim(), tipo: r.tipo_entrega, nombre: r.nombre_contacto, telefono: r.telefono,
+            direccion: r.direccion || "", distrito: r.distrito || "", referencia: r.referencia || "" } } : {}),
         })),
         solicitudes: sol.rows.map((r) => ({ id: r.id, mesa: String(r.mesa_id), tipo: r.tipo, datos: datosSolicitud(r), creado: iso(r.creado) })),
         correlativos: Object.fromEntries(ser.rows.map((r) => [r.serie.trim(), num(r.ultimo_numero)])),
@@ -188,7 +195,8 @@ async function abrirPostgres(url) {
           const tot = calcularTotales(its);   // los importes se calculan del detalle (no se guardan)
           return {
             id: r.id, tipo: r.tipo_comprobante === "01" ? "factura" : "boleta", serie: r.serie.trim(),
-            numero: String(r.numero).padStart(8, "0"), fecha: iso(r.fecha_emision), mesa: String(r.mesa_id), origen: r.origen,
+            numero: String(r.numero).padStart(8, "0"), fecha: iso(r.fecha_emision), mesa: r.mesa_id ? String(r.mesa_id) : null, origen: r.origen,
+            ...(r.codigo_web ? { web: { codigo: r.codigo_web.trim(), tipo: r.tipo_entrega } } : {}),
             cliente: r.numero_documento
               ? { tipoDoc: NOMBRE_DOC[r.tipo_documento], doc: r.numero_documento, nombre: r.cliente, ...(r.direccion ? { direccion: r.direccion } : {}) }
               : { tipoDoc: "-", doc: "-", nombre: SIN_NOMBRE },
@@ -200,7 +208,7 @@ async function abrirPostgres(url) {
           };
         }),
         resenas: res.rows.map((r) => ({
-          id: r.id, mesa: String(r.mesa_id), estrellas: num(r.estrellas), comentario: r.comentario, compId: r.comprobante_id, fecha: iso(r.fecha),
+          id: r.id, mesa: r.mesa_id ? String(r.mesa_id) : null, estrellas: num(r.estrellas), comentario: r.comentario, compId: r.comprobante_id, fecha: iso(r.fecha),
         })),
       };
     },
@@ -251,6 +259,27 @@ async function abrirPostgres(url) {
             await q("DELETE FROM solicitudes WHERE mesa_id = $1", [mesa]);
             break;
           }
+          case "pedidoWeb": {
+            const { comprobante: c, comanda: co } = resultado;
+            const w = co.web;
+            await q("UPDATE series SET ultimo_numero = $2 WHERE serie = $1", [c.serie, Number(c.numero)]);
+            const clienteId = await guardarCliente(q, c.cliente);
+            await q(`INSERT INTO comprobantes (id, serie, numero, fecha_emision, cliente_id, tasa_igv, origen)
+                     VALUES ($1, $2, $3, $4, $5, $6, 'web')`, [c.id, c.serie, Number(c.numero), c.fecha, clienteId, IGV]);
+            await q(`INSERT INTO pagos (comprobante_id, metodo_pago_id, monto, monto_recibido, numero_operacion)
+                     VALUES ($1, (SELECT id FROM metodos_pago WHERE nombre = $2), $3, $4, $5)`,
+              [c.id, c.pago.metodo, c.total, c.pago.recibido, c.pago.operacion || null]);
+            const pwId = "w" + co.id;
+            await q(`INSERT INTO pedidos_web (id, codigo, tipo_entrega, nombre_contacto, telefono, distrito_id, direccion, referencia, creado)
+                     VALUES ($1, $2, $3, $4, $5, (SELECT id FROM distritos_reparto WHERE nombre = $6), $7, $8, $9)`,
+              [pwId, w.codigo, w.tipo, w.nombre, w.telefono, w.distrito || null, w.direccion || null, w.referencia || null, co.creado]);
+            await q(`INSERT INTO comandas (id, mesa_id, pedido_web_id, estado, origen, nota, creado, comprobante_id)
+                     VALUES ($1, NULL, $2, 'nuevo', 'web', $3, $4, $5)`, [co.id, pwId, co.nota, co.creado, c.id]);
+            for (const i of co.items)
+              await q("INSERT INTO comanda_items (comanda_id, producto_id, cantidad, precio_unitario) VALUES ($1, $2, $3, $4)",
+                [co.id, i.id, i.cant, i.precio]);
+            break;
+          }
           case "calificar": {
             const r = despues.resenas[0];
             if (!r.compId) throw new Error("La reseña debe estar asociada a un comprobante.");
@@ -269,6 +298,7 @@ async function abrirPostgres(url) {
             await q("DELETE FROM resenas");
             await q("DELETE FROM solicitudes");
             await q("DELETE FROM comandas");          // borra también comanda_items (CASCADE)
+            await q("DELETE FROM pedidos_web");
             await q("DELETE FROM comprobantes");      // borra también pagos (CASCADE)
             await q("DELETE FROM clientes");
             await q("UPDATE series SET ultimo_numero = 0");

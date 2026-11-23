@@ -33,9 +33,9 @@ export default function VistaHistorial({ pos, onVer }) {
             <tbody>
               {lista.map((c) => (
                 <tr key={c.id}>
-                  <td><b>{c.serie}-{c.numero}</b><br /><small>{fechaHora(c.fecha)} · Mesa {c.mesa}</small></td>
+                  <td><b>{c.serie}-{c.numero}</b><br /><small>{fechaHora(c.fecha)} · {c.web ? `Web #${c.web.codigo}` : `Mesa ${c.mesa}`}</small></td>
                   <td>{c.cliente.nombre}<br /><small>{c.cliente.doc === "-" ? "Sin documento" : c.cliente.tipoDoc + " " + c.cliente.doc}</small></td>
-                  <td>{c.pago.metodo}<br /><small>{c.origen === "qr" ? "desde el celular" : "en caja"}</small></td>
+                  <td>{c.pago.metodo}<br /><small>{c.origen === "web" ? "por internet" : c.origen === "qr" ? "desde el celular" : "en caja"}</small></td>
                   <td className="num">{soles(c.total)}</td>
                   <td><button className="btn chico" onClick={() => onVer(c)}>Ver</button></td>
                 </tr>
@@ -49,7 +49,7 @@ export default function VistaHistorial({ pos, onVer }) {
           <ul className="resenas">
             {pos.resenas.map((r) => (
               <li key={r.id}>
-                <Estrellas n={r.estrellas} /> <small>Mesa {r.mesa} · {fechaHora(r.fecha)}</small>
+                <Estrellas n={r.estrellas} /> <small>{r.mesa ? `Mesa ${r.mesa}` : "Pedido web"} · {fechaHora(r.fecha)}</small>
                 {r.comentario && <p>{r.comentario}</p>}
               </li>
             ))}

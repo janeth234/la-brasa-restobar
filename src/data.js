@@ -12,12 +12,15 @@ export const EMISOR = {
 // Información que responde el bot (cámbiala por la real)
 export const NEGOCIO = {
   horario: "De lunes a jueves de 12:00 m. a 11:00 p. m., y de viernes a domingo de 12:00 m. a 1:00 a. m.",
-  delivery: "Sí, hacemos delivery en San Miguel, Magdalena y Pueblo Libre. Pide por WhatsApp al 987 654 321 (pedido mínimo S/ 30).",
+  delivery: "Sí, hacemos delivery en San Miguel, Magdalena del Mar y Pueblo Libre (pedido mínimo S/ 30). Pide y paga en nuestra página: sección \"Pide por internet\". También por WhatsApp al 987 654 321.",
   whatsapp: "987 654 321",
   redes: "Instagram y Facebook: @labrasarestobar",
   wifi: "Red: LaBrasa-Clientes · Clave: brasa2026",
   promociones: "Martes de alitas: 2 × 1 en alitas BBQ de 6 unidades. Jueves: jarra de chicha gratis por una parrilla familiar.",
 };
+// Pedidos por internet
+export const DISTRITOS_REPARTO = ["San Miguel", "Magdalena del Mar", "Pueblo Libre"];
+export const PEDIDO_MINIMO_DELIVERY = 30;   // soles
 export const IGV = 0.18;         // tasa IGV (los precios del menú ya incluyen IGV)
 export const LIMITE_DNI = 700;   // boletas mayores a S/ 700 exigen DNI del cliente
 export const MESAS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"];

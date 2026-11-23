@@ -1,6 +1,6 @@
 # Base de datos — La Brasa Restobar (PostgreSQL / Supabase, 3FN)
 
-**18 tablas** en Tercera Forma Normal, **5 vistas** que calculan los importes, y seguridad para Supabase (RLS activo y sin acceso público por la API).
+**20 tablas** en Tercera Forma Normal, **6 vistas** que calculan los importes, y seguridad para Supabase (RLS activo y sin acceso público por la API).
 
 | Archivo | Para qué |
 |---|---|
@@ -25,7 +25,9 @@ erDiagram
     METODOS_PAGO      ||--o{ PAGOS              : medio
     COMPROBANTES      |o--o{ COMANDAS           : "cobra"
     COMPROBANTES      ||--o| RESENAS            : califica
-    MESAS             ||--o{ COMANDAS           : "se pide en"
+    MESAS             |o--o{ COMANDAS           : "se pide en"
+    PEDIDOS_WEB       |o--o| COMANDAS           : "se cocina como"
+    DISTRITOS_REPARTO |o--o{ PEDIDOS_WEB        : "se entrega en"
     MESAS             ||--o{ SOLICITUDES        : avisa
     ESTADOS_COMANDA   ||--o{ COMANDAS           : estado
     COMANDAS          ||--|{ COMANDA_ITEMS      : contiene
@@ -119,9 +121,26 @@ erDiagram
         numeric monto_recibido
         varchar numero_operacion
     }
+    DISTRITOS_REPARTO {
+        smallint id PK
+        varchar nombre UK
+        boolean activo
+    }
+    PEDIDOS_WEB {
+        varchar id PK
+        char codigo UK "para el seguimiento"
+        varchar tipo_entrega "delivery o recojo"
+        varchar nombre_contacto
+        char telefono
+        smallint distrito_id FK
+        varchar direccion
+        varchar referencia
+        timestamptz creado
+    }
     COMANDAS {
         varchar id PK
-        smallint mesa_id FK
+        smallint mesa_id FK "o NULL si es web"
+        varchar pedido_web_id FK "o NULL si es mesa"
         varchar estado FK
         varchar origen
         varchar nota
@@ -154,6 +173,8 @@ erDiagram
 
 **Cómo se lee el flujo:** una **mesa** genera **comandas** con sus **ítems**; mientras `comprobante_id` es NULL están **pendientes de pago** y cocina no las ve. Al cobrar, se crea un **comprobante** (con su **serie**, el **cliente** si dio DNI o RUC, y su **pago**), las comandas pendientes de esa mesa apuntan a él y **recién pasan a cocina** (nuevo → preparando → listo → entregado). El detalle y los totales del comprobante se **calculan** a partir de esas comandas.
 
+**Pedidos por internet:** un `pedidos_web` guarda los datos de entrega (dependen del pedido, no del cliente que factura) y se cocina como una `comanda` sin mesa. El pedido se paga al hacerlo, así que nace con su `comprobante_id` y entra directo a cocina. Estados: nuevo → preparando → listo → **en_camino** (solo delivery) → entregado.
+
 **Regla de negocio "primero se paga":** la restricción `comanda_pagada_para_cocina` (`CHECK (estado = 'nuevo' OR comprobante_id IS NOT NULL)`) impide, en la propia base de datos, que una comanda avance en cocina sin estar pagada.
 
 ---
@@ -176,7 +197,9 @@ erDiagram
 | `series` | `serie` | B001 / F001 y su último número | `tipo_comprobante` |
 | `comprobantes` | `id` (único: serie + número) | Fecha, tasa de IGV, origen (caja/qr) | `serie`, `cliente_id` |
 | `pagos` | `id` | Monto, monto recibido, n.° de operación | `comprobante_id`, `metodo_pago_id` |
-| `comandas` | `id` | Pedido de una mesa; `comprobante_id` NULL = pendiente de pago | `mesa_id`, `estado`, `comprobante_id` |
+| `distritos_reparto` | `id` | Distritos con delivery | — |
+| `pedidos_web` | `id` (único: `codigo`) | Pedido por internet: delivery o recojo, contacto y dirección | `distrito_id` |
+| `comandas` | `id` | Pedido de una **mesa** o de un **pedido web** (exactamente uno: `CHECK num_nonnulls(...) = 1`); `comprobante_id` NULL = pendiente de pago | `mesa_id`, `pedido_web_id`, `estado`, `comprobante_id` |
 | `comanda_items` | (`comanda_id`, `producto_id`) | Cantidad y precio cobrado | ambas |
 | `solicitudes` | `id` (único: mesa + tipo) | "Llama al mozo" / "pide la cuenta" | `mesa_id`, `tipo_comprobante`, `cliente_id` |
 | `resenas` | `id` (único: comprobante) | Estrellas y comentario | `comprobante_id` |
@@ -248,6 +271,7 @@ correlativos(serie, ultimo)
 | `v_cierre_caja` | Ventas por día (hora de Lima) y método de pago |
 | `v_carta` | Carta activa con categoría, foto (sí/no) y etiquetas |
 | `v_cocina` | Pantalla de cocina: comandas pagadas y no entregadas, minutos desde el pago y productos |
+| `v_pedidos_web` | Pedidos por internet con contacto, distrito, estado y total |
 
 Consultas de ejemplo (Supabase → SQL Editor):
 ```sql

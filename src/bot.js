@@ -75,7 +75,13 @@ export function responderBot(texto, { productos, mesa, abiertas = [], carrito = 
   const segura = (() => {
     // --- acciones de la mesa ---
     if (tiene(/\b(mozo|mesero|moza|mesera|atencion|atiendan|venga alguien)\b/))
-      return { texto: "¿Quieres que avise al mozo para que venga a tu mesa?", acciones: [{ tipo: "mozo", label: "Sí, llamar al mozo" }] };
+      return mesa
+        ? { texto: "¿Quieres que avise al mozo para que venga a tu mesa?", acciones: [{ tipo: "mozo", label: "Sí, llamar al mozo" }] }
+        : { texto: `Para ayuda con tu pedido escríbenos por WhatsApp al ${NEGOCIO.whatsapp} o llámanos al ${EMISOR.telefono}.` };
+
+    // En la página de pedidos por internet no hay mesa: estado y cuenta se ven con el código del pedido
+    if (!mesa && tiene(/(mi|el|nuestro) pedido|demora|cuanto falta|ya viene|esta listo|ya esta|tarda|la cuenta|cuanto debo/))
+      return { texto: "Puedes seguir tu pedido con el código que te dimos al pagar (botón \"Tus pedidos\" arriba de la carta). Para pedir, agrega productos y pulsa \"Continuar\"." };
 
     if (tiene(/(mi|el|nuestro) pedido|demora|cuanto falta|ya viene|esta listo|ya esta|tarda/)) {
       if (!abiertas.length) return { texto: "Todavía no tienes pedidos en esta mesa. ¿Te muestro la carta o te recomiendo algo?" };

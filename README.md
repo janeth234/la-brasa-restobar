@@ -10,8 +10,11 @@ el cliente escanea el QR de su mesa **con cualquier celular**, ve la carta con f
 | **Bot** (botón "¿Te ayudo?") | Cliente | Chat que recomienda, **toma pedidos escritos** ("2 royal y una Inca Kola grande"), dice el estado del pedido y la cuenta, responde horario/delivery/pagos y llama al mozo. Con **Ollama** conversa con IA. |
 | **Cliente** `#mesa-7` | Cliente (sin clave) | Carta con fotos, bot, pedido, seguimiento, llamar al mozo, boleta/factura, pago desde el celular o en caja, calificación. Solo ve SU mesa. |
 | **QR general** `#carta` | Cliente | El cliente elige su mesa y ve la carta. |
+| **Pide por internet** `#pedir` | Cliente (cualquier celular o PC) | **Delivery** (San Miguel, Magdalena del Mar, Pueblo Libre; mínimo S/ 30) o **recojo en el local**. Carta con fotos, datos de entrega, boleta o factura, **pago en línea** y código de seguimiento. |
+| **Seguimiento** `#seguir-ABC123` | Cliente | Pagado → Preparando → Listo → En camino → Entregado; se actualiza solo. |
 | **Mozo** | Personal | **Alertas con sonido, vibración y notificación**: pedido listo para servir (botón Entregado), nuevo pedido por QR, mesa que llama o pide la cuenta. Registra pedidos (pasan a cocina cuando se cobran). |
 | **Cocina** | Personal | Pantalla oscura: **solo pedidos pagados**, con cronómetro desde el pago. |
+| **Delivery** | Personal | Pedidos por internet activos: nombre, celular (llamar / WhatsApp), dirección y referencia; botones **Despachar** y **Entregado**. |
 | **Caja** | Personal | Cobra lo pendiente de pago, valida RUC/DNI, calcula vuelto, emite B001/F001 y **envía el pedido a cocina**. |
 | **Comprobantes** | Personal | Historial, cierre de caja y reseñas. |
 | **Carta** | Personal | Agregar/editar productos, precios, "agotado" y **subir fotos reales**. |
@@ -124,7 +127,7 @@ Render no puede ejecutar Ollama, pero sí puede usar los modelos de Ollama en la
 (Otra opción: dejar el servidor en una PC del local con Ollama y publicarlo con un túnel como Cloudflare Tunnel.)
 
 ## Base de datos (PostgreSQL / Supabase, 3FN)
-18 tablas en **Tercera Forma Normal** + 5 vistas (importes, cocina, cierre de caja, carta). Diagrama entidad-relación,
+20 tablas en **Tercera Forma Normal** + 6 vistas (importes, cocina, pedidos web, cierre de caja, carta). Diagrama entidad-relación,
 diccionario de datos y justificación de 1FN, 2FN y 3FN en **[BASE_DE_DATOS.md](BASE_DE_DATOS.md)**.
 
 - `server/schema.sql`: tablas, catálogos SUNAT, vistas y seguridad.
@@ -154,7 +157,7 @@ src/
   utils.js         RUC/DNI, totales, monto en letras, recomendaciones
   qr.js            generador de códigos QR propio
   components/      Bot, Plato (foto o dibujo), FormComprobante, Ticket, QR
-  vistas/          Cliente, Mozo, Cocina, Caja, Historial, Productos, MesasQR
+  vistas/          Cliente, PedidoWeb (#pedir y seguimiento), Mozo, Cocina, Caja, Delivery, Historial, Productos, MesasQR
 public/fotos/      fotos de la carta inicial (<id>.jpg)
 render.yaml        configuración para Render
 ```

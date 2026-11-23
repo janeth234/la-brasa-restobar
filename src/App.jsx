@@ -9,13 +9,17 @@ import VistaHistorial from "./vistas/Historial.jsx";
 import VistaMesasQR from "./vistas/MesasQR.jsx";
 import VistaProductos from "./vistas/Productos.jsx";
 import VistaCliente, { ElegirMesa } from "./vistas/Cliente.jsx";
+import VistaDelivery from "./vistas/Delivery.jsx";
+import { PaginaPedido, SeguirPedido } from "./vistas/PedidoWeb.jsx";
 import ModalTicket from "./components/Ticket.jsx";
 
 /* Rutas por hash:
    #mesa-7  -> carta del cliente de la mesa 7 (lo que abre el QR de la mesa)
    #carta   -> QR general: el cliente elige su mesa y luego ve la carta
+   #pedir   -> pedidos por internet (delivery o recojo), se paga al pedir
+   #seguir-ABC123 -> seguimiento de un pedido por internet
    #mozo, #cocina, #caja, #comprobantes, #productos, #qr -> sistema del personal (con clave) */
-const VISTAS = [["mozo", "Mozo"], ["cocina", "Cocina"], ["caja", "Caja"], ["comprobantes", "Comprobantes"],
+const VISTAS = [["mozo", "Mozo"], ["cocina", "Cocina"], ["caja", "Caja"], ["delivery", "Delivery"], ["comprobantes", "Comprobantes"],
   ["productos", "Carta"], ["qr", "Mesas y QR"]];
 const leerHash = () => window.location.hash.replace("#", "");
 
@@ -24,7 +28,9 @@ export default function App() {
   const [verTicket, setVerTicket] = useState(null);
   const encontrada = (ruta.match(/^mesa-(\w+)$/) || [])[1];
   const mesaCliente = encontrada && MESAS.includes(encontrada) ? encontrada : null;
-  const rol = mesaCliente ? "cliente" : ruta === "carta" ? "ninguno" : "personal";
+  const codigoSeguir = (ruta.match(/^seguir-([A-Za-z0-9]{6})$/) || [])[1];
+  const esWeb = ruta === "pedir" || !!codigoSeguir;
+  const rol = mesaCliente ? "cliente" : esWeb ? "web" : ruta === "carta" ? "ninguno" : "personal";
   const pos = usePOS({ rol, mesa: mesaCliente });
   const personalListo = rol === "personal" && pos.modo !== "cargando" && !(pos.modo === "servidor" && pos.necesitaClave);
   const alertas = useAlertasMozo(pos, personalListo);
@@ -38,6 +44,8 @@ export default function App() {
 
   if (mesaCliente) return <VistaCliente mesa={mesaCliente} pos={pos} onSalir={() => ir("qr")} />;
   if (ruta === "carta") return <ElegirMesa onElegir={(m) => ir("mesa-" + m)} />;
+  if (ruta === "pedir") return <PaginaPedido pos={pos} ir={ir} />;
+  if (codigoSeguir) return <SeguirPedido pos={pos} codigo={codigoSeguir.toUpperCase()} ir={ir} />;
   if (pos.modo === "servidor" && pos.necesitaClave) return <Ingreso pos={pos} />;
 
   const vista = VISTAS.some(([k]) => k === ruta) ? ruta : "mozo";
@@ -45,6 +53,7 @@ export default function App() {
     mozo: alertas.alertas.length,
     cocina: pos.comandas.filter((c) => c.comprobanteId && (c.estado === "nuevo" || c.estado === "preparando")).length,
     caja: new Set(pos.comandas.filter((c) => !c.comprobanteId).map((c) => c.mesa)).size,
+    delivery: pos.comandas.filter((c) => c.web && (c.estado === "listo" || c.estado === "en_camino")).length,
     comprobantes: pos.comprobantes.length,
   };
 
@@ -76,6 +85,7 @@ export default function App() {
         {vista === "mozo" && <VistaMozo pos={pos} alertas={alertas} />}
         {vista === "cocina" && <VistaCocina pos={pos} />}
         {vista === "caja" && <VistaCaja pos={pos} onEmitido={setVerTicket} />}
+        {vista === "delivery" && <VistaDelivery pos={pos} />}
         {vista === "comprobantes" && <VistaHistorial pos={pos} onVer={setVerTicket} />}
         {vista === "productos" && <VistaProductos pos={pos} />}
         {vista === "qr" && <VistaMesasQR modo={pos.modo} />}

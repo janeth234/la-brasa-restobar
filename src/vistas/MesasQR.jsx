@@ -52,6 +52,13 @@ export default function VistaMesasQR({ modo }) {
         </p>
       )}
       <div className="qrs">
+        <article className="qr-card general web-qr">
+          <p className="qr-nombre">{EMISOR.nombreComercial}</p>
+          <QR texto={`${final}#pedir`} size={150} />
+          <p className="qr-mesa">Pide por internet</p>
+          <p className="qr-sub">Delivery o recojo. Para redes sociales, volantes y la puerta del local</p>
+          <a className="btn chico no-print" href="#pedir">Abrir la página</a>
+        </article>
         <article className="qr-card general">
           <p className="qr-nombre">{EMISOR.nombreComercial}</p>
           <QR texto={`${final}#carta`} size={150} />

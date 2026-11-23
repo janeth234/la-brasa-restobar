@@ -275,6 +275,40 @@ code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 1
 .pendiente-pago p { margin: 0 0 10px; font-weight: 600 }
 .pendiente-pago .btn.primario { margin: 0 }
 
+/* Página de pedidos por internet */
+.cliente.web { max-width: 560px }
+.web-hero { background: #1f1c18; color: #f3efe6; padding: 8px 16px 20px }
+.web-hero h1 { margin: 6px 0 6px; font-size: clamp(30px, 8vw, 40px); line-height: 1.05; color: var(--aji) }
+.web-hero p { margin: 0 0 6px; color: #d9d1c2 }
+.web-horario { font-size: 13px; color: #b9b09f !important }
+.web-tel { background: transparent !important; color: var(--aji) !important; border-color: #4a443a !important; text-decoration: none; display: inline-flex; align-items: center }
+.mis-web { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 10px 16px 0; font-size: 14px; color: var(--sub) }
+.mis-web .chip { min-height: 34px; font-weight: 700; letter-spacing: .04em }
+.codigo-pedido { font-size: 40px; font-weight: 800; letter-spacing: .12em; margin: 0; color: var(--ink) }
+.codigo-pedido.izq { text-align: left; margin-bottom: 12px }
+.msg-seguimiento { font-weight: 700; margin: 12px 0 0 }
+.link.volver { padding: 0; min-height: 36px }
+.peq-izq { font-size: 13px; margin: -6px 0 12px }
+.cliente.web .pasos li { font-size: 11px }
+.qr-card.web-qr { background: #2fae5a; color: #fff }
+.qr-card.web-qr .qr-mesa, .qr-card.web-qr .qr-nombre { color: #fff }
+.qr-card.web-qr .btn { color: #fff; border-color: rgba(255,255,255,.5) }
+
+/* Pestaña Delivery */
+a.btn { text-decoration: none; color: inherit; display: inline-flex; align-items: center; justify-content: center }
+.web-lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px }
+.web-card { background: var(--bg); border-radius: 12px; padding: 12px 14px; border-left: 6px solid var(--line); display: flex; flex-direction: column; gap: 6px }
+.web-card.estado-listo { border-left-color: #2fae5a }
+.web-card.estado-en_camino { border-left-color: #3a8cc1 }
+.web-card.estado-preparando { border-left-color: var(--aji) }
+.web-card header { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap }
+.web-estado { color: var(--sub); font-size: 13px }
+.web-card p { margin: 0; font-size: 14px }
+.web-card ul { margin: 0; padding-left: 18px; font-size: 14px }
+.web-card a { color: inherit }
+.web-card footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; font-size: 14px }
+.web-dir { color: var(--sub) }
+
 /* Alertas del mozo */
 .panel-alertas { background: var(--panel); border-radius: 14px; padding: 16px 20px; margin-bottom: 20px; border: 2px solid transparent }
 .panel-alertas.con-alertas { border-color: var(--aji) }

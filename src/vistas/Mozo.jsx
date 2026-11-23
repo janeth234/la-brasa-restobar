@@ -13,7 +13,7 @@ export default function VistaMozo({ pos, alertas }) {
   const [nota, setNota] = useState("");
   const [aviso, setAviso] = useState("");
 
-  const ocupadas = new Set(pos.comandas.map((c) => c.mesa));
+  const ocupadas = new Set(pos.comandas.filter((c) => c.mesa).map((c) => c.mesa));
   const llamando = new Set(alertas.alertas.map((a) => a.mesa));
 
   const agregar = (p) =>

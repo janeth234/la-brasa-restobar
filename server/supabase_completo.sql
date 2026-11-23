@@ -7,6 +7,7 @@
 -- =====================================================================
 --  BASE DE DATOS DE LA BRASA RESTOBAR — PostgreSQL / Supabase
 --  Diseño en Tercera Forma Normal (3FN). Ver BASE_DE_DATOS.md
+--  Incluye pedidos en mesa (QR / mozo) y pedidos por internet (delivery / recojo).
 --
 --  El servidor ejecuta este archivo al arrancar (crea lo que falte).
 --  También puedes pegarlo en Supabase → SQL Editor → Run.
@@ -131,8 +132,9 @@ CREATE TABLE IF NOT EXISTS comprobantes (
   fecha_emision      TIMESTAMPTZ  NOT NULL DEFAULT now(),
   cliente_id         INTEGER      REFERENCES clientes(id),     -- NULL = "clientes varios"
   tasa_igv           NUMERIC(4,2) NOT NULL DEFAULT 0.18,       -- tasa vigente al emitir
-  origen             VARCHAR(5)   NOT NULL CHECK (origen IN ('caja', 'qr')),
-  UNIQUE (serie, numero)
+  origen             VARCHAR(5)   NOT NULL,                     -- caja, qr o web
+  UNIQUE (serie, numero),
+  CONSTRAINT comprobantes_origen_check CHECK (origen IN ('caja', 'qr', 'web'))
 );
 
 CREATE TABLE IF NOT EXISTS pagos (
@@ -146,24 +148,52 @@ CREATE TABLE IF NOT EXISTS pagos (
 );
 
 -- =====================================================================
--- 4. PEDIDOS (COMANDAS)
+-- 4. PEDIDOS POR INTERNET (delivery o recojo en el local)
+-- =====================================================================
+
+CREATE TABLE IF NOT EXISTS distritos_reparto (
+  id           SMALLSERIAL  PRIMARY KEY,
+  nombre       VARCHAR(40)  NOT NULL UNIQUE,
+  activo       BOOLEAN      NOT NULL DEFAULT TRUE
+);
+
+-- Datos de contacto y entrega de un pedido hecho desde la página web
+CREATE TABLE IF NOT EXISTS pedidos_web (
+  id                 VARCHAR(20)  PRIMARY KEY,
+  codigo             CHAR(6)      NOT NULL UNIQUE,              -- para que el cliente siga su pedido
+  tipo_entrega       VARCHAR(8)   NOT NULL CHECK (tipo_entrega IN ('delivery', 'recojo')),
+  nombre_contacto    VARCHAR(80)  NOT NULL,
+  telefono           CHAR(9)      NOT NULL CHECK (telefono ~ '^9[0-9]{8}$'),
+  distrito_id        SMALLINT     REFERENCES distritos_reparto(id),
+  direccion          VARCHAR(200),
+  referencia         VARCHAR(200),
+  creado             TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  CHECK (tipo_entrega = 'recojo' OR (distrito_id IS NOT NULL AND direccion IS NOT NULL))
+);
+
+-- =====================================================================
+-- 5. PEDIDOS (COMANDAS)
 -- =====================================================================
 
 -- Una mesa puede tener varias comandas; al cobrar, las pendientes apuntan al mismo comprobante.
 -- REGLA: cocina solo prepara comandas pagadas (comprobante_id NOT NULL).
+-- Cada comanda es de una MESA o de un PEDIDO WEB (exactamente uno de los dos)
 CREATE TABLE IF NOT EXISTS comandas (
   id                 VARCHAR(20)  PRIMARY KEY,
-  mesa_id            SMALLINT     NOT NULL REFERENCES mesas(id),
+  mesa_id            SMALLINT     REFERENCES mesas(id),
+  pedido_web_id      VARCHAR(20)  UNIQUE REFERENCES pedidos_web(id),
   estado             VARCHAR(12)  NOT NULL REFERENCES estados_comanda(codigo),
-  origen             VARCHAR(5)   NOT NULL CHECK (origen IN ('qr', 'mozo')),
+  origen             VARCHAR(5)   NOT NULL,
   nota               VARCHAR(200) NOT NULL DEFAULT '',
   creado             TIMESTAMPTZ  NOT NULL DEFAULT now(),
   actualizado        TIMESTAMPTZ  NOT NULL DEFAULT now(),
   comprobante_id     VARCHAR(20)  REFERENCES comprobantes(id),  -- NULL = pendiente de pago
   -- no se puede avanzar en cocina sin haber pagado
-  CONSTRAINT comanda_pagada_para_cocina CHECK (estado = 'nuevo' OR comprobante_id IS NOT NULL)
+  CONSTRAINT comanda_pagada_para_cocina CHECK (estado = 'nuevo' OR comprobante_id IS NOT NULL),
+  CONSTRAINT comanda_mesa_o_web CHECK (num_nonnulls(mesa_id, pedido_web_id) = 1),
+  CONSTRAINT comandas_origen_check CHECK (origen IN ('qr', 'mozo', 'web'))
 );
--- Para bases ya creadas con una versión anterior: agrega la regla si falta
+-- Para bases ya creadas con una versión anterior: agrega lo que falte
 -- (NOT VALID: no revisa pedidos de prueba antiguos, sí todos los nuevos)
 DO $$
 BEGIN
@@ -171,6 +201,16 @@ BEGIN
     ALTER TABLE comandas ADD CONSTRAINT comanda_pagada_para_cocina
       CHECK (estado = 'nuevo' OR comprobante_id IS NOT NULL) NOT VALID;
   END IF;
+  -- pedidos por internet: la comanda puede no tener mesa
+  ALTER TABLE comandas ALTER COLUMN mesa_id DROP NOT NULL;
+  ALTER TABLE comandas ADD COLUMN IF NOT EXISTS pedido_web_id VARCHAR(20) UNIQUE REFERENCES pedidos_web(id);
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'comanda_mesa_o_web') THEN
+    ALTER TABLE comandas ADD CONSTRAINT comanda_mesa_o_web CHECK (num_nonnulls(mesa_id, pedido_web_id) = 1) NOT VALID;
+  END IF;
+  ALTER TABLE comandas DROP CONSTRAINT IF EXISTS comandas_origen_check;
+  ALTER TABLE comandas ADD CONSTRAINT comandas_origen_check CHECK (origen IN ('qr', 'mozo', 'web'));
+  ALTER TABLE comprobantes DROP CONSTRAINT IF EXISTS comprobantes_origen_check;
+  ALTER TABLE comprobantes ADD CONSTRAINT comprobantes_origen_check CHECK (origen IN ('caja', 'qr', 'web'));
 END $$;
 CREATE INDEX IF NOT EXISTS idx_comandas_abiertas ON comandas (mesa_id) WHERE comprobante_id IS NULL;
 CREATE INDEX IF NOT EXISTS idx_comandas_cocina ON comandas (estado) WHERE comprobante_id IS NOT NULL AND estado <> 'entregado';
@@ -206,7 +246,7 @@ CREATE TABLE IF NOT EXISTS resenas (
 );
 
 -- =====================================================================
--- 5. DATOS DE LOS CATÁLOGOS
+-- 7. DATOS DE LOS CATÁLOGOS
 -- =====================================================================
 INSERT INTO tipos_documento (codigo, nombre, longitud) VALUES ('1', 'DNI', 8), ('6', 'RUC', 11)
   ON CONFLICT (codigo) DO NOTHING;
@@ -217,11 +257,18 @@ INSERT INTO series (serie, tipo_comprobante) VALUES ('F001', '01'), ('B001', '03
 INSERT INTO metodos_pago (nombre, en_linea) VALUES ('Efectivo', FALSE), ('Tarjeta', TRUE), ('Yape', TRUE), ('Plin', TRUE)
   ON CONFLICT (nombre) DO NOTHING;
 INSERT INTO estados_comanda (codigo, descripcion, orden) VALUES
-  ('nuevo', 'Recibido', 1), ('preparando', 'En preparación', 2), ('listo', 'Listo para servir', 3), ('entregado', 'Entregado en la mesa', 4)
-  ON CONFLICT (codigo) DO NOTHING;
+  ('nuevo', 'Pagado, en cola de cocina', 1), ('preparando', 'En preparación', 2), ('listo', 'Listo', 3),
+  ('en_camino', 'En camino (delivery)', 4), ('entregado', 'Entregado', 5)
+  ON CONFLICT DO NOTHING;
+UPDATE estados_comanda SET orden = 5, descripcion = 'Entregado' WHERE codigo = 'entregado' AND orden = 4;   -- bases anteriores
+INSERT INTO estados_comanda (codigo, descripcion, orden) VALUES ('en_camino', 'En camino (delivery)', 4) ON CONFLICT DO NOTHING;
+UPDATE estados_comanda SET descripcion = 'Pagado, en cola de cocina' WHERE codigo = 'nuevo';
+UPDATE estados_comanda SET descripcion = 'Listo' WHERE codigo = 'listo';
+INSERT INTO distritos_reparto (nombre) VALUES ('San Miguel'), ('Magdalena del Mar'), ('Pueblo Libre')
+  ON CONFLICT (nombre) DO NOTHING;
 
 -- =====================================================================
--- 6. VISTAS (los importes se calculan, no se guardan)
+-- 8. VISTAS (los importes se calculan, no se guardan)
 -- =====================================================================
 
 -- Detalle de cada comprobante: los productos de todas las comandas que pagó
@@ -243,7 +290,7 @@ CREATE OR REPLACE VIEW v_comprobantes AS
 WITH totales AS (
   SELECT comprobante_id, SUM(importe) AS total FROM v_comprobante_detalle GROUP BY comprobante_id
 ), mesa AS (
-  SELECT DISTINCT ON (comprobante_id) comprobante_id, mesa_id FROM comandas
+  SELECT DISTINCT ON (comprobante_id) comprobante_id, mesa_id, pedido_web_id FROM comandas
   WHERE comprobante_id IS NOT NULL ORDER BY comprobante_id, creado
 )
 SELECT c.id, c.serie, c.numero, s.tipo_comprobante, tc.nombre AS tipo_nombre,
@@ -253,29 +300,45 @@ SELECT c.id, c.serie, c.numero, s.tipo_comprobante, tc.nombre AS tipo_nombre,
        COALESCE(cl.nombre, 'CLIENTES VARIOS') AS cliente, cl.direccion,
        ROUND(t.total / (1 + c.tasa_igv), 2)          AS op_gravada,
        t.total - ROUND(t.total / (1 + c.tasa_igv), 2) AS igv,
-       t.total
+       t.total,
+       pw.codigo AS codigo_web, pw.tipo_entrega
 FROM comprobantes c
 JOIN series s             ON s.serie = c.serie
 JOIN tipos_comprobante tc ON tc.codigo = s.tipo_comprobante
 JOIN totales t            ON t.comprobante_id = c.id
 LEFT JOIN mesa m          ON m.comprobante_id = c.id
 LEFT JOIN clientes cl     ON cl.id = c.cliente_id
-LEFT JOIN tipos_documento td ON td.codigo = cl.tipo_documento;
+LEFT JOIN tipos_documento td ON td.codigo = cl.tipo_documento
+LEFT JOIN pedidos_web pw  ON pw.id = m.pedido_web_id;
 
 -- Pantalla de cocina: solo comandas pagadas y no entregadas, con minutos desde el pago
 CREATE OR REPLACE VIEW v_cocina AS
 SELECT co.id, co.mesa_id, co.estado, ec.descripcion AS estado_nombre, co.origen, co.nota,
        cp.fecha_emision AS pagado_en,
        FLOOR(EXTRACT(EPOCH FROM (now() - cp.fecha_emision)) / 60)::INTEGER AS minutos,
-       STRING_AGG(ci.cantidad || ' x ' || p.nombre, ', ' ORDER BY p.nombre) AS productos
+       STRING_AGG(ci.cantidad || ' x ' || p.nombre, ', ' ORDER BY p.nombre) AS productos,
+       pw.codigo AS codigo_web, pw.tipo_entrega
 FROM comandas co
 JOIN comprobantes cp    ON cp.id = co.comprobante_id
 JOIN estados_comanda ec ON ec.codigo = co.estado
 JOIN comanda_items ci   ON ci.comanda_id = co.id
 JOIN productos p        ON p.id = ci.producto_id
-WHERE co.estado <> 'entregado'
-GROUP BY co.id, ec.descripcion, ec.orden, cp.fecha_emision
+LEFT JOIN pedidos_web pw ON pw.id = co.pedido_web_id
+WHERE co.estado NOT IN ('entregado', 'en_camino')
+GROUP BY co.id, ec.descripcion, ec.orden, cp.fecha_emision, pw.codigo, pw.tipo_entrega
 ORDER BY ec.orden, cp.fecha_emision;
+
+-- Pedidos por internet activos, con datos de entrega (pestaña Delivery)
+CREATE OR REPLACE VIEW v_pedidos_web AS
+SELECT pw.codigo, pw.tipo_entrega, pw.nombre_contacto, pw.telefono, d.nombre AS distrito, pw.direccion, pw.referencia,
+       co.estado, ec.descripcion AS estado_nombre, pw.creado,
+       SUM(ci.cantidad * ci.precio_unitario) AS total
+FROM pedidos_web pw
+JOIN comandas co        ON co.pedido_web_id = pw.id
+JOIN estados_comanda ec ON ec.codigo = co.estado
+JOIN comanda_items ci   ON ci.comanda_id = co.id
+LEFT JOIN distritos_reparto d ON d.id = pw.distrito_id
+GROUP BY pw.id, d.nombre, co.estado, ec.descripcion;
 
 -- Ventas por día y método de pago (cierre de caja)
 CREATE OR REPLACE VIEW v_cierre_caja AS
@@ -303,7 +366,7 @@ GROUP BY p.id, c.nombre, c.orden, pf.producto_id
 ORDER BY c.orden, p.orden;
 
 -- =====================================================================
--- 7. SEGURIDAD PARA SUPABASE
+-- 9. SEGURIDAD PARA SUPABASE
 --  Supabase publica las tablas de "public" en su API REST (clave anon).
 --  Se activa RLS y se quitan permisos a anon/authenticated: solo el servidor
 --  de la app (dueño de las tablas) accede. En PostgreSQL normal no afecta.
@@ -313,7 +376,7 @@ DECLARE t TEXT;
 BEGIN
   FOREACH t IN ARRAY ARRAY['tipos_documento', 'tipos_comprobante', 'metodos_pago', 'estados_comanda', 'mesas',
     'categorias', 'productos', 'producto_fotos', 'etiquetas', 'producto_etiquetas', 'clientes', 'series',
-    'comprobantes', 'pagos', 'comandas', 'comanda_items', 'solicitudes', 'resenas'] LOOP
+    'comprobantes', 'pagos', 'comandas', 'comanda_items', 'solicitudes', 'resenas', 'distritos_reparto', 'pedidos_web'] LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', t);
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
       EXECUTE format('REVOKE ALL ON TABLE public.%I FROM anon', t);
@@ -322,7 +385,7 @@ BEGIN
       EXECUTE format('REVOKE ALL ON TABLE public.%I FROM authenticated', t);
     END IF;
   END LOOP;
-  FOREACH t IN ARRAY ARRAY['v_comprobante_detalle', 'v_comprobantes', 'v_cierre_caja', 'v_carta', 'v_cocina'] LOOP
+  FOREACH t IN ARRAY ARRAY['v_comprobante_detalle', 'v_comprobantes', 'v_cierre_caja', 'v_carta', 'v_cocina', 'v_pedidos_web'] LOOP
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
       EXECUTE format('REVOKE ALL ON public.%I FROM anon', t);
     END IF;
@@ -337,6 +400,7 @@ ALTER VIEW v_comprobantes SET (security_invoker = on);
 ALTER VIEW v_cierre_caja SET (security_invoker = on);
 ALTER VIEW v_carta SET (security_invoker = on);
 ALTER VIEW v_cocina SET (security_invoker = on);
+ALTER VIEW v_pedidos_web SET (security_invoker = on);
 
 
 -- Datos iniciales de La Brasa Restobar (generado desde src/data.js)
