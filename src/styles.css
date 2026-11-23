@@ -1,0 +1,337 @@
+/* VOICE: herramienta de trabajo de restaurante, directa y rápida de leer
+   IDEA: el riel de comandas de una cocina y el ticket térmico de caja
+   PICTURE: las propias pantallas de trabajo (mesas, comandas, ticket 80 mm)
+   COLOUR+TYPE: carbón + ají amarillo + rojo rocoto para alertas; Archivo
+   LAYOUT: barra de pestañas fija, dos columnas que se apilan en móvil */
+@import url("https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=Courier+Prime:wght@400;700&display=swap");
+
+:root {
+  color-scheme: light dark;
+  --bg: light-dark(#ffffff, #15130f);
+  --panel: light-dark(#f5f3ee, #211e18);
+  --ink: light-dark(#1f1c18, #f3efe6);
+  --sub: light-dark(#6b645a, #a89f90);
+  --line: light-dark(#e2ddd2, #3a352c);
+  --aji: #f2b705;
+  --aji-ink: #1f1c18;
+  --rocoto: light-dark(#c8341f, #ff6a4d);
+  --ok: light-dark(#2f7a3a, #7fd18b);
+}
+:root[data-theme=light] { color-scheme: light }
+:root[data-theme=dark] { color-scheme: dark }
+* { box-sizing: border-box; min-width: 0 }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 "Archivo", system-ui, sans-serif; overflow-x: clip }
+button, input { font: inherit; color: inherit }
+button { cursor: pointer }
+:focus-visible { outline: 3px solid var(--aji); outline-offset: 2px }
+
+.top { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; justify-content: space-between;
+  padding: 12px max(4vw, 16px); background: #1f1c18; color: #f3efe6 }
+.marca { display: flex; gap: 12px; align-items: center }
+.marca div { display: flex; flex-direction: column; line-height: 1.2 }
+.marca small { color: #b9b09f; font-size: 13px }
+.logo { width: 44px; height: 44px; border-radius: 50%; background: var(--aji); color: var(--aji-ink); display: grid; place-items: center; font-weight: 800 }
+.tabs { display: flex; gap: 6px; flex-wrap: wrap }
+.tab { min-height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid #4a443a; background: transparent; color: #f3efe6; display: flex; gap: 8px; align-items: center; font-weight: 600 }
+.tab.on { background: var(--aji); color: var(--aji-ink); border-color: var(--aji) }
+.badge { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--rocoto); color: #fff; font-size: 13px; display: inline-grid; place-items: center }
+
+main { padding: clamp(16px, 3vw, 32px) max(4vw, 16px); max-width: 1320px; margin: 0 auto }
+h2 { font-size: 17px; margin: 20px 0 10px; display: flex; gap: 8px; align-items: center }
+h2:first-child { margin-top: 0 }
+.panel { background: var(--panel); border-radius: 14px; padding: 20px }
+.vacio, .leyenda { color: var(--sub); font-size: 14px }
+.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums }
+
+.grid-mozo, .grid-caja { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 20px; align-items: start }
+.comanda, .cobro { position: sticky; top: 92px }
+
+.mesas { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px }
+.mesa { min-height: 56px; border-radius: 10px; border: 2px solid var(--line); background: var(--bg); font-weight: 800; font-size: 17px; position: relative }
+.mesa.ocupada::after { content: ""; position: absolute; top: 6px; right: 6px; width: 9px; height: 9px; border-radius: 50%; background: var(--rocoto) }
+.mesa.llama { box-shadow: 0 0 0 3px var(--aji) }
+.pto { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--rocoto); margin: 0 4px 0 8px }
+.pto.amarillo { background: var(--aji) }
+.mesa.sel { border-color: var(--ink); background: var(--ink); color: var(--bg) }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px }
+.chip { min-height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid var(--line); background: var(--bg) }
+.chip.on { background: var(--ink); color: var(--bg); border-color: var(--ink) }
+
+.productos { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px }
+.producto { min-height: 84px; text-align: left; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); display: flex; flex-direction: column; justify-content: space-between; gap: 6px; transition: transform .12s }
+.producto:active { transform: scale(.97) }
+.producto b { color: var(--rocoto) }
+
+.lineas { list-style: none; padding: 0; margin: 0 0 12px }
+.lineas li { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line) }
+.cant { display: flex; align-items: center; gap: 4px }
+.cant button { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); font-size: 18px }
+.cant span { width: 24px; text-align: center; font-weight: 800 }
+
+.campo { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 14px }
+.campo span { color: var(--sub) }
+.campo input { min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font-size: 16px }
+.total-linea { display: flex; justify-content: space-between; font-size: 20px; margin: 8px 0 14px }
+
+.btn { min-height: 44px; padding: 0 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font-weight: 600 }
+.btn.primario { width: 100%; background: var(--aji); color: var(--aji-ink); border-color: var(--aji); font-weight: 800; font-size: 17px }
+.btn.primario:disabled { opacity: .45; cursor: not-allowed }
+.btn.chico { min-height: 36px; padding: 0 12px }
+.btn.peligro { background: var(--rocoto); color: #fff; border-color: var(--rocoto) }
+.ok { color: var(--ok) }
+.err { color: var(--rocoto) }
+.alerta { background: color-mix(in srgb, var(--aji) 22%, transparent); padding: 10px 12px; border-radius: 10px; font-size: 14px }
+
+/* Cocina */
+.kds { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start }
+.col { background: var(--panel); border-radius: 14px; padding: 16px; min-height: 60vh; border-top: 6px solid var(--line) }
+.col-nuevo { border-top-color: var(--rocoto) }
+.col-preparando { border-top-color: var(--aji) }
+.col-listo { border-top-color: var(--ok) }
+.ticket-cocina { background: var(--bg); border-radius: 10px; padding: 12px; margin-bottom: 12px; box-shadow: 0 2px 0 var(--line) }
+.ticket-cocina header { display: flex; justify-content: space-between; font-size: 18px; margin-bottom: 6px }
+.ticket-cocina header span { color: var(--sub); font-size: 14px }
+.ticket-cocina ul { padding-left: 0; list-style: none; margin: 0 0 8px; font-size: 17px }
+.ticket-cocina .nota { background: color-mix(in srgb, var(--aji) 25%, transparent); padding: 6px 8px; border-radius: 6px; font-size: 14px }
+.ticket-cocina .btn { width: 100% }
+.ticket-cocina.tarde { outline: 3px solid var(--rocoto) }
+.ticket-cocina.tarde header span { color: var(--rocoto); font-weight: 800 }
+
+/* Caja */
+.cuentas { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px }
+.cuenta { min-height: 64px; border-radius: 10px; border: 2px solid var(--line); background: var(--bg); display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: 8px 12px }
+.cuenta.sel { border-color: var(--ink) }
+.detalle { width: 100%; border-collapse: collapse; font-size: 15px }
+.detalle th, .detalle td { padding: 8px 6px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top }
+.detalle th { color: var(--sub); font-weight: 600; font-size: 13px }
+.detalle th.num, .detalle td.num { text-align: right }
+.detalle small { color: var(--sub) }
+.totales { display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; margin: 14px 0 0 }
+.totales dt { color: var(--sub) }
+.totales dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums }
+.totales .grande { font-size: 24px; font-weight: 800; color: var(--ink) }
+.segmento { display: grid; grid-template-columns: 1fr 1fr; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 4px; margin-bottom: 14px }
+.segmento button { min-height: 44px; border: 0; border-radius: 9px; background: transparent; font-weight: 600 }
+.segmento button.on { background: var(--ink); color: var(--bg) }
+.campo small { font-size: 13px }
+
+.cifra { font-size: clamp(32px, 5vw, 46px); font-weight: 800; margin: 0; line-height: 1.05 }
+.barras { list-style: none; padding: 0; margin: 16px 0 }
+.barras li { display: grid; grid-template-columns: 80px 1fr auto; gap: 10px; align-items: center; padding: 6px 0 }
+.barra { height: 12px; background: var(--bg); border-radius: 6px; overflow: hidden }
+.barra i { display: block; height: 100%; background: var(--aji) }
+.confirmar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center }
+.confirmar p { width: 100%; margin: 0 }
+
+/* Ticket */
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: grid; place-items: center; padding: 16px; z-index: 20; overflow-y: auto }
+.modal-caja { background: var(--panel); border-radius: 14px; padding: 16px; max-width: 360px; width: 100% }
+.ticket { background: #fff; color: #111; font: 13px/1.35 "Courier Prime", "Courier New", monospace; padding: 16px 14px; border-radius: 4px; width: 100% }
+.ticket p { margin: 2px 0 }
+.ticket .c { text-align: center }
+.ticket .peq { font-size: 12px }
+.ticket hr { border: 0; border-top: 1px dashed #555; margin: 8px 0 }
+.ticket .fila { display: flex; justify-content: space-between; gap: 8px }
+.ticket .fila span:last-child { white-space: nowrap }
+.ticket .grande { font-weight: 700; font-size: 15px }
+.ticket .letras { font-size: 12px; margin-top: 6px }
+.modal-acciones { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px }
+
+@media (max-width: 860px) {
+  .grid-mozo, .grid-caja, .kds { grid-template-columns: minmax(0, 1fr) }
+  .comanda, .cobro { position: static }
+  .col { min-height: 0 }
+}
+@media (max-width: 600px) {
+  .top { position: static }
+  .tab { padding: 0 12px }
+  .detalle { font-size: 13px }
+}
+@media (prefers-reduced-motion: reduce) { .producto { transition: none } }
+
+
+/* Llamados de mesas (vista mozo) */
+.llamados { display: grid; gap: 8px; margin-bottom: 16px }
+.llamado { display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; align-items: center; background: var(--aji); color: var(--aji-ink); padding: 10px 14px; border-radius: 12px }
+.llamado .btn { background: #fff; color: #1f1c18; border-color: transparent }
+.cuenta.pide { border-color: var(--aji); background: color-mix(in srgb, var(--aji) 18%, var(--bg)) }
+
+/* Cocina en pantalla oscura (como un monitor de cocina) */
+main.oscuro { max-width: none; background: #14161a; min-height: calc(100vh - 68px); color: #eef0f2 }
+main.oscuro .col { background: #1e2127; border-top-color: #3a3f48 }
+main.oscuro .col-nuevo { border-top-color: #ff5a3d }
+main.oscuro .col-preparando { border-top-color: var(--aji) }
+main.oscuro .col-listo { border-top-color: #4cd07a }
+main.oscuro .ticket-cocina { background: #2a2e36; box-shadow: none; color: #eef0f2 }
+main.oscuro .ticket-cocina .btn { background: #3a3f48; border-color: #4a505b; color: #fff }
+main.oscuro .vacio, main.oscuro .origen { color: #9aa1ab }
+main.oscuro .ticket-cocina.tarde { outline-color: #ff5a3d }
+main.oscuro .nota { color: #1f1c18; background: var(--aji) }
+.reloj { font-variant-numeric: tabular-nums; font-weight: 800 }
+main.oscuro .reloj { color: #4cd07a }
+main.oscuro .tarde .reloj { color: #ff5a3d }
+.origen { font-size: 13px; color: var(--sub); margin: 0 0 6px }
+
+/* Reseñas */
+.resenas { list-style: none; padding: 0; margin: 0 }
+.resenas li { padding: 10px 0; border-bottom: 1px solid var(--line) }
+.resenas p { margin: 4px 0 0 }
+.resenas small { color: var(--sub) }
+.estrellas-mini i { font-style: normal; color: var(--line); font-size: 18px }
+.estrellas-mini i.llena { color: var(--aji) }
+.separador { height: 1px; background: var(--line); margin: 20px 0 }
+
+/* Mesas y QR */
+.qrs { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 14px; margin-top: 14px }
+.qr-card { background: #1f1c18; color: #f3efe6; border-radius: 16px; padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center }
+.qr, .qr-falla { background: #fff; border-radius: 10px; padding: 6px }
+.qr svg { width: 100%; height: 100%; display: block }
+.qr-card.general { background: var(--aji); color: var(--aji-ink) }
+.qr-card.general .qr-mesa { color: var(--aji-ink); font-size: 22px }
+.qr-card.general .qr-nombre { color: #5a4a1a }
+.qr-card.general .btn { color: var(--aji-ink); border-color: rgba(0,0,0,.3) }
+.qr-falla { display: grid; place-items: center; color: #555; font-size: 13px }
+.qr-nombre { margin: 0; font-size: 13px; color: #b9b09f }
+.qr-mesa { margin: 4px 0 0; font-size: 26px; font-weight: 800; color: var(--aji) }
+.qr-sub { margin: 0 0 6px; font-size: 13px }
+.qr-card .btn { background: transparent; color: #f3efe6; border-color: #4a443a; display: inline-flex; align-items: center; text-decoration: none }
+
+/* ===== Vista del cliente (celular) ===== */
+.cliente { max-width: 480px; margin: 0 auto; min-height: 100vh; background: var(--bg); padding-bottom: 96px; position: relative }
+.cli-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px 16px; background: #1f1c18; color: #f3efe6 }
+.cli-top div { display: flex; flex-direction: column; line-height: 1.25 }
+.cli-mesa { color: var(--aji); font-weight: 800 }
+.cli-top .btn { background: var(--aji); color: var(--aji-ink); border-color: var(--aji) }
+.cli-tabs { display: grid; grid-template-columns: repeat(3, 1fr); background: #1f1c18; padding: 0 8px 8px; gap: 4px; position: sticky; top: 0; z-index: 4 }
+.cli-tabs button { min-height: 44px; border: 0; border-radius: 10px; background: transparent; color: #c9c0b0; font-weight: 600; font-size: 14px }
+.cli-tabs button.on { background: #3a352c; color: #fff }
+.cli-cuerpo { padding: 16px }
+.cli-cuerpo.centro { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px }
+.cli-cats { margin-top: 14px }
+.asistente-btn { width: 100%; text-align: left; border: 0; border-radius: 14px; padding: 14px 16px; background: linear-gradient(120deg, #2b2620, #1f1c18); color: #f3efe6; display: flex; flex-direction: column; gap: 2px }
+.asistente-btn b { color: var(--aji) }
+.asistente-btn span { font-size: 14px; color: #c9c0b0 }
+.carta { display: grid; gap: 10px }
+.plato-card { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; background: var(--panel); border-radius: 14px; padding: 8px 10px 8px 8px }
+.plato-abrir { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; text-align: left; border: 0; background: transparent; padding: 0 }
+.plato-txt { display: flex; flex-direction: column; gap: 2px }
+.plato-txt small { color: var(--sub); font-size: 13px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden }
+.plato-txt em { font-style: normal; font-weight: 800; color: var(--rocoto) }
+.mas { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--aji); color: var(--aji-ink); font-size: 24px; font-weight: 800 }
+.barra-carrito { position: fixed; left: 50%; transform: translateX(-50%); bottom: 16px; width: min(448px, calc(100% - 32px)); min-height: 56px; border: 0; border-radius: 16px; background: #1f1c18; color: #fff; display: flex; justify-content: space-between; align-items: center; padding: 0 18px; font-weight: 700; z-index: 6; box-shadow: 0 8px 24px rgba(0,0,0,.25) }
+.barra-carrito b { color: var(--aji) }
+.hoja-fondo { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 10; display: flex; align-items: flex-end; justify-content: center }
+.hoja { background: var(--bg); width: 100%; max-width: 480px; max-height: 92vh; overflow-y: auto; border-radius: 20px 20px 0 0; padding: 20px 16px 24px; animation: sube .22s ease-out }
+@keyframes sube { from { transform: translateY(30px); opacity: 0 } to { transform: none; opacity: 1 } }
+.hoja .btn.primario { margin-bottom: 8px }
+.btn.ancho { width: 100% }
+.detalle-arte { display: grid; place-items: center; background: var(--panel); border-radius: 16px; padding: 12px }
+.detalle-nombre { font-size: 24px; margin-top: 14px }
+.detalle-pie { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: center; margin-top: 8px }
+.detalle-pie .btn.primario { margin: 0 }
+.cant.grande button { width: 44px; height: 44px }
+.lineas li.sin-cant { grid-template-columns: 1fr auto }
+.chat { display: flex; flex-direction: column; height: 86vh }
+.chat-cab { display: flex; justify-content: space-between; align-items: center }
+.chat-cab h2 { margin: 0 }
+.chat-msgs { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 12px 0 }
+.burbuja { max-width: 88%; padding: 10px 12px; border-radius: 14px; background: var(--panel) }
+.burbuja p { margin: 0 }
+.burbuja.yo { align-self: flex-end; background: var(--aji); color: var(--aji-ink) }
+.reco { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; margin-top: 8px; background: var(--bg); border-radius: 10px; padding: 4px 8px 4px 4px }
+.reco span { display: flex; flex-direction: column; font-size: 14px }
+.reco small { color: var(--sub) }
+.chat-input { display: grid; grid-template-columns: 1fr auto; gap: 8px }
+.chat-input input { min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font-size: 16px }
+.chat-input .btn.primario { width: auto; margin: 0 }
+.seguimiento { background: var(--panel); border-radius: 14px; padding: 14px; margin-bottom: 12px }
+.seguimiento h3 { margin: 0 0 10px; font-size: 16px }
+.seguimiento ul { margin: 10px 0 0; padding-left: 18px; color: var(--sub) }
+.pasos { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; counter-reset: p }
+.pasos li { font-size: 12px; text-align: center; color: var(--sub); padding-top: 12px; border-top: 5px solid var(--line); border-radius: 2px }
+.pasos li.hecho { border-top-color: var(--aji); color: var(--ink); font-weight: 600 }
+.check { width: 84px; height: 84px; border-radius: 50%; background: #2fae5a; color: #fff; font-size: 46px; display: grid; place-items: center; margin-top: 12px; animation: sube .3s ease-out }
+.titulo-pago { font-size: 28px; margin: 4px 0 0 }
+.calificar { width: 100%; background: var(--panel); border-radius: 16px; padding: 16px; margin-top: 8px; text-align: left }
+.calificar h3 { margin: 0 0 8px; text-align: center }
+.estrellas { display: flex; justify-content: center; gap: 4px; margin-bottom: 12px }
+.estrellas button { width: 48px; height: 48px; border: 0; background: transparent; font-size: 36px; color: var(--line); line-height: 1 }
+.estrellas button.llena { color: var(--aji) }
+.link { background: none; border: 0; color: var(--sub); text-decoration: underline; min-height: 44px }
+.peq { font-size: 13px; margin: 6px 0 10px; text-align: center }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); top: 12px; background: #2fae5a; color: #fff; padding: 10px 16px; border-radius: 12px; z-index: 30; font-weight: 600; max-width: calc(100% - 32px) }
+.cli-pie { text-align: center; padding: 8px }
+.form-comp { margin-bottom: 4px }
+
+@media (prefers-reduced-motion: reduce) { .hoja, .check { animation: none } }
+
+.conexion { font-size: 12px; padding: 3px 10px; border-radius: 12px; border: 1px solid #4a443a; color: #c9c0b0; margin-left: 4px }
+.conexion.servidor { border-color: #2fae5a; color: #7fd18b }
+.qr-url { max-width: 560px }
+code { background: var(--bg); padding: 1px 6px; border-radius: 6px; font-size: 14px }
+
+/* Bot */
+.bot-flotante { position: fixed; left: max(16px, calc(50% - 224px)); bottom: 16px; z-index: 7; min-height: 52px; padding: 0 16px 0 6px;
+  border: 0; border-radius: 26px; background: var(--aji); color: var(--aji-ink); font-weight: 800; display: flex; align-items: center; gap: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25) }
+.bot-flotante.sube { bottom: 84px }
+.bot-avatar { width: 40px; height: 40px; border-radius: 50%; background: #1f1c18; color: var(--aji); display: grid; place-items: center; font-weight: 800; font-size: 14px; flex: none }
+.bot-id { display: flex; align-items: center; gap: 10px }
+.bot-id span:last-child { display: flex; flex-direction: column; line-height: 1.2 }
+.bot-id small { color: var(--sub); font-size: 13px }
+.burbuja p { white-space: pre-line }
+.bot-confirmar { margin-top: 10px; font-size: 15px; min-height: 44px }
+.bot-accion { margin: 8px 6px 0 0 }
+.bot-chips { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; margin: 8px 0 }
+.bot-chips .chip { flex: none }
+.escribiendo { display: flex; gap: 5px; padding: 14px 16px }
+.escribiendo span { width: 8px; height: 8px; border-radius: 50%; background: var(--sub); animation: punto 1s infinite ease-in-out }
+.escribiendo span:nth-child(2) { animation-delay: .15s } .escribiendo span:nth-child(3) { animation-delay: .3s }
+@keyframes punto { 0%, 80%, 100% { opacity: .25 } 40% { opacity: 1 } }
+@media (prefers-reduced-motion: reduce) { .escribiendo span { animation: none } }
+
+/* Ingreso del personal */
+.ingreso { min-height: 100vh; display: grid; place-items: center; padding: 16px; background: #1f1c18 }
+.ingreso-caja { background: var(--bg); border-radius: 18px; padding: 28px 22px; width: min(380px, 100%); display: flex; flex-direction: column; gap: 6px }
+.ingreso-caja h1 { margin: 8px 0 0; font-size: 26px; line-height: 1.1 }
+.logo.grande { width: 60px; height: 60px; font-size: 22px }
+
+/* Pestaña Carta */
+.fila-titulo { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 6px }
+.fila-titulo h2 { margin: 0 }
+.btn.primario.corto { width: auto; font-size: 15px; padding: 0 16px }
+.grupo-productos h3 { margin: 18px 0 6px; font-size: 15px; color: var(--sub) }
+.lista-productos { list-style: none; padding: 0; margin: 0 }
+.lista-productos li { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line) }
+.lista-productos li.agotado { opacity: .55 }
+.lp-txt { display: flex; flex-direction: column; line-height: 1.3 }
+.lp-txt small { color: var(--sub); font-size: 13px }
+.interruptor { min-height: 36px; padding: 0 12px; border-radius: 18px; border: 1px solid var(--line); background: var(--bg); font-size: 13px; font-weight: 600 }
+.interruptor.on { background: color-mix(in srgb, #2fae5a 18%, var(--bg)); border-color: #2fae5a; color: var(--ok) }
+.foto-editor { display: flex; gap: 14px; align-items: center; margin-bottom: 14px; flex-wrap: wrap }
+.foto-botones { display: flex; flex-direction: column; gap: 8px }
+.btn.subir { display: inline-flex; align-items: center; cursor: pointer; background: var(--ink); color: var(--bg); border-color: var(--ink) }
+.campo select { min-height: 44px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); font-size: 16px }
+.check-linea { display: flex; gap: 10px; align-items: center; min-height: 44px; margin-bottom: 8px }
+.check-linea input { width: 20px; height: 20px }
+@media (max-width: 600px) {
+  .lista-productos li { grid-template-columns: auto 1fr auto; }
+  .lista-productos li .interruptor, .lista-productos li .btn { grid-column: span 1 }
+}
+
+.foto-producto { object-fit: cover; border-radius: 14px; display: block; background: var(--line) }
+
+/* Impresión: el ticket, o los QR cuando se usa "Imprimir los QR" */
+.qr-url { margin-top: 14px }
+@media print {
+  @page { margin: 0 }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact }
+  body * { visibility: hidden }
+  .ticket, .ticket * { visibility: visible }
+  .ticket { position: absolute; left: 0; top: 0; width: 80mm; padding: 4mm }
+  body.imprimir-qr .qrs, body.imprimir-qr .qrs * { visibility: visible }
+  body.imprimir-qr .qrs { position: absolute; left: 0; top: 0; width: 100%; padding: 10mm; grid-template-columns: repeat(3, 1fr) }
+  body.imprimir-qr .qr-card { break-inside: avoid }
+  body.imprimir-qr .qr-card .btn { display: none }
+}

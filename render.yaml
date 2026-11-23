@@ -1,0 +1,23 @@
+# Despliegue en Render (https://render.com) — "New > Blueprint" y elige este repositorio.
+# La base de datos es Supabase: pega su cadena "Session pooler" como DATABASE_URL.
+services:
+  - type: web
+    name: la-brasa-restobar
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/info
+    envVars:
+      - key: DATABASE_URL
+        sync: false          # Render te la pedirá: Supabase → Connect → Session pooler
+      - key: CLAVE_PERSONAL
+        sync: false          # clave para caja, cocina, mozos y carta
+      - key: OLLAMA_URL      # bot con IA (opcional): Ollama Cloud
+        value: https://ollama.com
+      - key: OLLAMA_API_KEY
+        sync: false
+      - key: OLLAMA_MODELO
+        value: gpt-oss:120b
+      - key: NODE_VERSION
+        value: "20"
