@@ -42,16 +42,16 @@ const ESQUEMA = {
   required: ["texto"],
 };
 
-const ESTADOS = { nuevo: "recibido", preparando: "en preparación", listo: "listo para servir", entregado: "entregado" };
+const ESTADOS = { nuevo: "pagado, en cola de cocina", preparando: "en preparación", listo: "listo para servir", entregado: "entregado" };
 
 function instrucciones(estado, mesa) {
   const carta = estado.productos.filter((p) => p.disponible)
     .map((p) => `${p.id} | ${p.nombre} | ${p.cat} | S/ ${p.precio.toFixed(2)} | ${p.desc}`).join("\n");
-  const abiertas = estado.comandas.filter((c) => c.mesa === mesa && c.estado !== "pagado");
-  const pedidos = abiertas.length
-    ? abiertas.map((c, i) => `Pedido ${i + 1} (${ESTADOS[c.estado] || c.estado}): ${c.items.map((x) => `${x.cant} ${x.nombre}`).join(", ")}`).join("\n")
+  const pedidosMesa = estado.comandas.filter((c) => c.mesa === mesa);
+  const pedidos = pedidosMesa.length
+    ? pedidosMesa.map((c, i) => `Pedido ${i + 1} (${c.comprobanteId ? ESTADOS[c.estado] || c.estado : "PENDIENTE DE PAGO"}): ${c.items.map((x) => `${x.cant} ${x.nombre}`).join(", ")}`).join("\n")
     : "Todavía no ha pedido nada.";
-  const total = calcularTotales(consolidar(abiertas)).total;
+  const total = calcularTotales(consolidar(pedidosMesa.filter((c) => !c.comprobanteId))).total;
   return `Eres el asistente virtual de ${EMISOR.nombreComercial}, un restobar en Lima, Perú. Atiendes desde su celular al cliente de la mesa ${mesa}.
 Responde SIEMPRE en español, amable, cercano y BREVE (máximo 3 oraciones). Usa SOLO la información de abajo.
 Nunca inventes productos, precios, promociones ni datos. Si no sabes algo, dilo y sugiere llamar al mozo.
@@ -69,7 +69,8 @@ ${carta}
 
 MESA ${mesa}
 ${pedidos}
-Cuenta actual: S/ ${total.toFixed(2)}
+Pendiente de pago: S/ ${total.toFixed(2)}
+REGLA: cocina solo prepara lo que ya está pagado. Si hay algo pendiente de pago, recuérdale que lo pague (desde "Pagar" o en caja).
 
 FORMATO: responde SOLO con un objeto JSON, sin texto fuera de él:
 {"texto": "tu respuesta", "mostrar": ["ids de hasta 3 productos que recomiendas"], "agregar": [{"id": "id", "cant": 1}], "accion": "ninguna"}

@@ -97,6 +97,24 @@ async function abrirPostgres(url) {
     }
   });
 
+  // Fotos iniciales: si la base de datos aún no tiene ninguna foto, copia las de public/fotos/<id>.jpg
+  const { rows: [{ fotos }] } = await pool.query("SELECT count(*)::int AS fotos FROM producto_fotos");
+  if (fotos === 0) {
+    const carpeta = path.join(DIR, "..", "public", "fotos");
+    const { rows: existentes } = await pool.query("SELECT id FROM productos WHERE activo");
+    let n = 0;
+    for (const { id } of existentes) {
+      const archivo = path.join(carpeta, `${id}.jpg`);
+      if (!fs.existsSync(archivo)) continue;
+      await pool.query(
+        `INSERT INTO producto_fotos (producto_id, imagen, tipo_mime, version)
+         VALUES ($1, decode($2, 'base64'), 'image/jpeg', ${fotoVersion}) ON CONFLICT (producto_id) DO NOTHING`,
+        [id, fs.readFileSync(archivo).toString("base64")]);
+      n++;
+    }
+    if (n) console.log(`  Fotos de la carta cargadas en la base de datos (${n}).`);
+  }
+
   const datosSolicitud = (r) => (r.tipo_comprobante ? {
     tipo: r.tipo_comprobante === "01" ? "factura" : "boleta",
     doc: r.numero_documento || "",
@@ -108,7 +126,7 @@ async function abrirPostgres(url) {
   return {
     tipo: "PostgreSQL",
 
-    // Lee lo necesario para trabajar: carta, cuentas abiertas, avisos, últimos comprobantes y reseñas
+    // Lee lo necesario para trabajar: carta, pedidos (por pagar y en cocina), avisos, últimos comprobantes y reseñas
     async cargar() {
       const [prod, com, sol, ser, comp, res] = await Promise.all([
         pool.query(`
@@ -122,12 +140,14 @@ async function abrirPostgres(url) {
           WHERE p.activo
           ORDER BY c.orden, p.orden`),
         pool.query(`
-          SELECT co.id, co.mesa_id, co.estado, co.origen, co.nota, co.creado,
+          SELECT co.id, co.mesa_id, co.estado, co.origen, co.nota, co.creado, co.comprobante_id, cp.fecha_emision AS pagado_en,
                  COALESCE((SELECT json_agg(json_build_object('id', ci.producto_id, 'nombre', p.nombre,
                            'precio', ci.precio_unitario, 'cant', ci.cantidad) ORDER BY p.nombre)
                            FROM comanda_items ci JOIN productos p ON p.id = ci.producto_id
                            WHERE ci.comanda_id = co.id), '[]'::json) AS items
-          FROM comandas co WHERE co.comprobante_id IS NULL ORDER BY co.creado`),
+          FROM comandas co LEFT JOIN comprobantes cp ON cp.id = co.comprobante_id
+          WHERE co.estado <> 'entregado'      -- pendientes de pago y las que cocina aún no entrega
+          ORDER BY co.creado`),
         pool.query(`
           SELECT s.id, s.mesa_id, s.tipo, s.creado, s.tipo_comprobante,
                  cl.numero_documento, cl.nombre AS cliente_nombre, cl.direccion
@@ -159,6 +179,7 @@ async function abrirPostgres(url) {
         })),
         comandas: com.rows.map((r) => ({
           id: r.id, mesa: String(r.mesa_id), estado: r.estado, origen: r.origen, nota: r.nota, creado: iso(r.creado), items: items(r.items),
+          ...(r.comprobante_id ? { comprobanteId: r.comprobante_id, pagadoEn: iso(r.pagado_en) } : {}),
         })),
         solicitudes: sol.rows.map((r) => ({ id: r.id, mesa: String(r.mesa_id), tipo: r.tipo, datos: datosSolicitud(r), creado: iso(r.creado) })),
         correlativos: Object.fromEntries(ser.rows.map((r) => [r.serie.trim(), num(r.ultimo_numero)])),

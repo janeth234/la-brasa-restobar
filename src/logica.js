@@ -13,7 +13,11 @@ export const ESTADO_INICIAL = {
   resenas: [],       // {id, mesa, estrellas, comentario, compId, fecha}
 };
 
-const abiertas = (e, mesa) => e.comandas.filter((c) => c.mesa === mesa && c.estado !== "pagado");
+/* Regla del restobar: COCINA SOLO PREPARA LO QUE YA ESTÁ PAGADO.
+   Una comanda sin comprobanteId está "pendiente de pago" (no aparece en cocina).
+   Al emitir la boleta/factura, sus comandas reciben comprobanteId y pasan a cocina. */
+export const porPagar = (c) => !c.comprobanteId;
+const porPagarDe = (e, mesa) => e.comandas.filter((c) => c.mesa === mesa && porPagar(c));
 
 export function aplicar(e, { tipo, datos = {} }) {
   switch (tipo) {
@@ -37,6 +41,11 @@ export function aplicar(e, { tipo, datos = {} }) {
     case "cambiarEstado": {
       const { id, estado } = datos;
       if (!["nuevo", "preparando", "listo", "entregado"].includes(estado)) throw new Error("Estado inválido.");
+      const actual = e.comandas.find((c) => c.id === id);
+      if (!actual) throw new Error("La comanda ya no existe.");
+      if (porPagar(actual)) throw new Error("Esta comanda aún no está pagada: cocina la prepara cuando se cobre.");
+      // al entregarla, sale de las pantallas (en la base de datos queda como "entregado")
+      if (estado === "entregado") return { estado: { ...e, comandas: e.comandas.filter((c) => c.id !== id) } };
       return { estado: { ...e, comandas: e.comandas.map((c) => (c.id === id ? { ...c, estado, [estado]: ahora() } : c)) } };
     }
     case "solicitar": {
@@ -52,8 +61,8 @@ export function aplicar(e, { tipo, datos = {} }) {
     case "emitir": {
       // Emite boleta (B001) o factura (F001) y cierra la cuenta de la mesa
       const { mesa, datosCliente, origen } = datos;
-      const items = consolidar(abiertas(e, mesa));
-      if (!items.length) throw new Error("La mesa no tiene consumo pendiente.");
+      const items = consolidar(porPagarDe(e, mesa));
+      if (!items.length) throw new Error("La mesa no tiene pedidos pendientes de pago.");
       const tot = calcularTotales(items);
       const dc = { tipo: "boleta", doc: "", nombre: "", direccion: "", ...(datosCliente || {}) };
       const err = validarCliente(dc, tot.total);   // RUC/DNI se validan aquí (también en el servidor)
@@ -76,8 +85,8 @@ export function aplicar(e, { tipo, datos = {} }) {
           ...e,
           correlativos: { ...e.correlativos, [serie]: numero },
           comprobantes: [comp, ...e.comprobantes],
-          // las comandas pagadas salen de la pantalla (en la base de datos quedan como "pagado")
-          comandas: e.comandas.filter((c) => !(c.mesa === mesa && c.estado !== "pagado")),
+          // las comandas pagadas pasan a cocina (el cronómetro de cocina empieza al pagar)
+          comandas: e.comandas.map((c) => (c.mesa === mesa && porPagar(c) ? { ...c, comprobanteId: comp.id, pagadoEn: comp.fecha } : c)),
           solicitudes: e.solicitudes.filter((s) => s.mesa !== mesa),
         },
         resultado: comp,
@@ -133,7 +142,7 @@ export function vistaPublica(e, mesa) {
   return {
     ...ESTADO_INICIAL,
     productos: e.productos.filter((p) => p.disponible),
-    comandas: e.comandas.filter((c) => c.mesa === mesa && c.estado !== "pagado"),
+    comandas: e.comandas.filter((c) => c.mesa === mesa),
     solicitudes: e.solicitudes.filter((s) => s.mesa === mesa),
   };
 }

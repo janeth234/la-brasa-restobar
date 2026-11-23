@@ -3,9 +3,10 @@ import { IGV, METODOS } from "../data.js";
 import { soles, r2, calcularTotales, consolidar, validarCliente, armarCliente } from "../utils.js";
 import FormComprobante, { DATOS_VACIOS } from "../components/FormComprobante.jsx";
 
-/* Caja: cobra las cuentas abiertas y emite boleta o factura */
+/* Caja: cobra los pedidos pendientes de pago y emite boleta o factura.
+   Al cobrar, el pedido pasa a cocina (cocina solo prepara lo pagado). */
 export default function VistaCaja({ pos, onEmitido }) {
-  const abiertas = pos.comandas.filter((c) => c.estado !== "pagado");
+  const abiertas = pos.comandas.filter((c) => !c.comprobanteId);   // pendientes de pago
   const mesas = [...new Set(abiertas.map((c) => c.mesa))];
   const [mesa, setMesa] = useState(null);
   const [datos, setDatos] = useState(DATOS_VACIOS);
@@ -17,7 +18,6 @@ export default function VistaCaja({ pos, onEmitido }) {
   const delaMesa = abiertas.filter((c) => c.mesa === actual);
   const items = consolidar(delaMesa);
   const tot = calcularTotales(items);
-  const enCocina = delaMesa.some((c) => c.estado === "nuevo" || c.estado === "preparando");
   const vuelto = metodo === "Efectivo" && recibido ? r2(Number(recibido) - tot.total) : 0;
   const pideCuenta = pos.solicitudes.find((s) => s.mesa === actual && s.tipo === "cuenta");
 
@@ -52,14 +52,14 @@ export default function VistaCaja({ pos, onEmitido }) {
     return (
       <section className="panel">
         <h2>Caja</h2>
-        <p className="vacio">No hay cuentas abiertas. Los pedidos del mozo o del QR aparecerán aquí.</p>
+        <p className="vacio">No hay pedidos pendientes de pago. Los pedidos del mozo o del QR aparecen aquí y pasan a cocina cuando se cobran.</p>
       </section>
     );
 
   return (
     <div className="grid-caja">
       <section className="panel">
-        <h2>Cuentas abiertas</h2>
+        <h2>Pendientes de pago</h2>
         <div className="cuentas">
           {mesas.map((m) => {
             const t = calcularTotales(consolidar(abiertas.filter((c) => c.mesa === m))).total;
@@ -73,7 +73,7 @@ export default function VistaCaja({ pos, onEmitido }) {
         </div>
 
         <h2>Detalle · Mesa {actual}</h2>
-        {enCocina && <p className="alerta">Hay platos que aún se están preparando en cocina.</p>}
+        <p className="alerta">Al cobrar, este pedido pasa a cocina para prepararse.</p>
         <table className="detalle">
           <thead><tr><th>Cant.</th><th>Descripción</th><th className="num">P. unit.</th><th className="num">Importe</th></tr></thead>
           <tbody>
@@ -110,7 +110,7 @@ export default function VistaCaja({ pos, onEmitido }) {
 
         {error && <p className="err">{error}</p>}
         <button className="btn primario" disabled={enviando} onClick={cobrar}>
-          Cobrar {soles(tot.total)} y emitir {datos.tipo}
+          Cobrar {soles(tot.total)}, emitir {datos.tipo} y enviar a cocina
         </button>
       </aside>
     </div>

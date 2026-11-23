@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { EMISOR, MESAS } from "./data.js";
 import { usePOS } from "./usePOS.js";
+import { useAlertasMozo } from "./useAlertasMozo.js";
 import VistaMozo from "./vistas/Mozo.jsx";
 import VistaCocina from "./vistas/Cocina.jsx";
 import VistaCaja from "./vistas/Caja.jsx";
@@ -25,6 +26,8 @@ export default function App() {
   const mesaCliente = encontrada && MESAS.includes(encontrada) ? encontrada : null;
   const rol = mesaCliente ? "cliente" : ruta === "carta" ? "ninguno" : "personal";
   const pos = usePOS({ rol, mesa: mesaCliente });
+  const personalListo = rol === "personal" && pos.modo !== "cargando" && !(pos.modo === "servidor" && pos.necesitaClave);
+  const alertas = useAlertasMozo(pos, personalListo);
 
   useEffect(() => {
     const f = () => setRuta(leerHash());
@@ -39,9 +42,9 @@ export default function App() {
 
   const vista = VISTAS.some(([k]) => k === ruta) ? ruta : "mozo";
   const badges = {
-    mozo: pos.solicitudes.length,
-    cocina: pos.comandas.filter((c) => c.estado === "nuevo" || c.estado === "preparando").length,
-    caja: new Set(pos.comandas.filter((c) => c.estado !== "pagado").map((c) => c.mesa)).size,
+    mozo: alertas.alertas.length,
+    cocina: pos.comandas.filter((c) => c.comprobanteId && (c.estado === "nuevo" || c.estado === "preparando")).length,
+    caja: new Set(pos.comandas.filter((c) => !c.comprobanteId).map((c) => c.mesa)).size,
     comprobantes: pos.comprobantes.length,
   };
 
@@ -70,7 +73,7 @@ export default function App() {
       </header>
 
       <main className={"no-print" + (vista === "cocina" ? " oscuro" : "")}>
-        {vista === "mozo" && <VistaMozo pos={pos} />}
+        {vista === "mozo" && <VistaMozo pos={pos} alertas={alertas} />}
         {vista === "cocina" && <VistaCocina pos={pos} />}
         {vista === "caja" && <VistaCaja pos={pos} onEmitido={setVerTicket} />}
         {vista === "comprobantes" && <VistaHistorial pos={pos} onVer={setVerTicket} />}
@@ -78,6 +81,13 @@ export default function App() {
         {vista === "qr" && <VistaMesasQR modo={pos.modo} />}
       </main>
 
+      {vista !== "mozo" && alertas.alertas.length > 0 && (
+        <button className="alerta-flotante no-print" onClick={() => ir("mozo")}>
+          <span className="alerta-num">{alertas.alertas.length}</span>
+          <span><b>{alertas.alertas[alertas.alertas.length - 1].texto}</b>
+            <small>{alertas.alertas.length > 1 ? `y ${alertas.alertas.length - 1} alerta(s) más · ` : ""}Ver alertas del mozo</small></span>
+        </button>
+      )}
       {verTicket && <ModalTicket comp={verTicket} onCerrar={() => setVerTicket(null)} />}
     </div>
   );

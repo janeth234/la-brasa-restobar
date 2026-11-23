@@ -73,5 +73,9 @@ export const PRODUCTOS_INICIALES = [
   R("r4", "Limonada (jarra 1 L)", 15, "Limón recién exprimido.", ["#eef3b0", "#c9d65a"], ["bebida", "refresco", "compartir"]),
   R("r5", "Maracuyá (jarra 1 L)", 15, "Refresco natural de maracuyá.", ["#f7b733", "#e08a1e"], ["bebida", "refresco", "compartir"]),
 ];
+// Fotos reales de la carta inicial: public/fotos/<id>.jpg
+// (con base de datos, el servidor las copia a la tabla producto_fotos la primera vez)
+for (const p of PRODUCTOS_INICIALES) p.foto = `fotos/${p.id}.jpg`;
+
 export const CATEGORIAS_BASE = [...new Set(PRODUCTOS_INICIALES.map((p) => p.cat))];
 export const FORMAS = ["hamburguesa", "papas", "alitas", "parrilla", "botella", "vaso"];

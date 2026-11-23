@@ -1,6 +1,6 @@
 # Base de datos — La Brasa Restobar (PostgreSQL / Supabase, 3FN)
 
-**18 tablas** en Tercera Forma Normal, **4 vistas** que calculan los importes, y seguridad para Supabase (RLS activo y sin acceso público por la API).
+**18 tablas** en Tercera Forma Normal, **5 vistas** que calculan los importes, y seguridad para Supabase (RLS activo y sin acceso público por la API).
 
 | Archivo | Para qué |
 |---|---|
@@ -152,7 +152,9 @@ erDiagram
 ```
 *(GitHub y VS Code muestran este diagrama; también puedes pegarlo en https://mermaid.live)*
 
-**Cómo se lee el flujo:** una **mesa** genera **comandas** con sus **ítems**. Al cobrar, se crea un **comprobante** (con su **serie**, el **cliente** si dio DNI o RUC, y su **pago**), y todas las comandas abiertas de esa mesa apuntan a él. El detalle y los totales del comprobante se **calculan** a partir de esas comandas.
+**Cómo se lee el flujo:** una **mesa** genera **comandas** con sus **ítems**; mientras `comprobante_id` es NULL están **pendientes de pago** y cocina no las ve. Al cobrar, se crea un **comprobante** (con su **serie**, el **cliente** si dio DNI o RUC, y su **pago**), las comandas pendientes de esa mesa apuntan a él y **recién pasan a cocina** (nuevo → preparando → listo → entregado). El detalle y los totales del comprobante se **calculan** a partir de esas comandas.
+
+**Regla de negocio "primero se paga":** la restricción `comanda_pagada_para_cocina` (`CHECK (estado = 'nuevo' OR comprobante_id IS NOT NULL)`) impide, en la propia base de datos, que una comanda avance en cocina sin estar pagada.
 
 ---
 
@@ -174,7 +176,7 @@ erDiagram
 | `series` | `serie` | B001 / F001 y su último número | `tipo_comprobante` |
 | `comprobantes` | `id` (único: serie + número) | Fecha, tasa de IGV, origen (caja/qr) | `serie`, `cliente_id` |
 | `pagos` | `id` | Monto, monto recibido, n.° de operación | `comprobante_id`, `metodo_pago_id` |
-| `comandas` | `id` | Pedido enviado a cocina | `mesa_id`, `estado`, `comprobante_id` |
+| `comandas` | `id` | Pedido de una mesa; `comprobante_id` NULL = pendiente de pago | `mesa_id`, `estado`, `comprobante_id` |
 | `comanda_items` | (`comanda_id`, `producto_id`) | Cantidad y precio cobrado | ambas |
 | `solicitudes` | `id` (único: mesa + tipo) | "Llama al mozo" / "pide la cuenta" | `mesa_id`, `tipo_comprobante`, `cliente_id` |
 | `resenas` | `id` (único: comprobante) | Estrellas y comentario | `comprobante_id` |
@@ -220,7 +222,7 @@ correlativos(serie, ultimo)
 | `pago_vuelto = recibido − total` | No se guarda: `monto_recibido − monto` |
 | `resenas.mesa` dependía del comprobante | Se quitó; la mesa sale del comprobante → comandas |
 | `comprobantes.mesa` dependía de las comandas cobradas | Se quitó; `comandas.comprobante_id` relaciona ambas |
-| `comanda.estado = 'pagado'` dependía de si tenía comprobante | "Pagado" significa `comprobante_id IS NOT NULL`; se quitó ese estado |
+| `comanda.estado = 'pagado'` dependía de si tenía comprobante | "Pagado" significa `comprobante_id IS NOT NULL` (y "pendiente de pago", que es NULL); no se guarda como estado |
 | `productos.categoria` (texto repetido en cada producto) | Tabla `categorias` + `categoria_id` |
 | Valores de estado y tipo de documento escritos a mano en cada fila | Catálogos `estados_comanda`, `tipos_documento`, `tipos_comprobante` |
 
@@ -245,6 +247,7 @@ correlativos(serie, ultimo)
 | `v_comprobantes` | Comprobante completo: número `B001-00000001`, tipo, mesa, cliente, op. gravada, IGV y total |
 | `v_cierre_caja` | Ventas por día (hora de Lima) y método de pago |
 | `v_carta` | Carta activa con categoría, foto (sí/no) y etiquetas |
+| `v_cocina` | Pantalla de cocina: comandas pagadas y no entregadas, minutos desde el pago y productos |
 
 Consultas de ejemplo (Supabase → SQL Editor):
 ```sql

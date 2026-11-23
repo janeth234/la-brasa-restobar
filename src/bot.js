@@ -61,7 +61,8 @@ function leerPedido(texto, productos) {
   return { pedido, dudas };
 }
 
-const ESTADOS = { nuevo: "recibido, en cola de cocina", preparando: "preparándose en cocina", listo: "listo, el mozo ya lo lleva", entregado: "entregado en tu mesa" };
+const ESTADOS = { nuevo: "pagado, en cola de cocina", preparando: "preparándose en cocina", listo: "listo, el mozo ya lo lleva", entregado: "entregado en tu mesa" };
+const estadoDe = (c) => (c.comprobanteId ? ESTADOS[c.estado] || c.estado : "pendiente de pago (cocina lo prepara cuando pagues)");
 
 export function responderBot(texto, { productos, mesa, abiertas = [], carrito = [] }) {
   const t = normalizar(texto);
@@ -78,27 +79,29 @@ export function responderBot(texto, { productos, mesa, abiertas = [], carrito = 
 
     if (tiene(/(mi|el|nuestro) pedido|demora|cuanto falta|ya viene|esta listo|ya esta|tarda/)) {
       if (!abiertas.length) return { texto: "Todavía no tienes pedidos en esta mesa. ¿Te muestro la carta o te recomiendo algo?" };
-      const lineas = abiertas.map((c, i) => `Pedido ${i + 1}: ${ESTADOS[c.estado] || c.estado}.`);
-      return { texto: lineas.join("\n"), acciones: [{ tipo: "ir", tab: "pedidos", label: "Ver mis pedidos" }] };
+      const lineas = abiertas.map((c, i) => `Pedido ${i + 1}: ${estadoDe(c)}.`);
+      const acciones = [{ tipo: "ir", tab: "pedidos", label: "Ver mis pedidos" }];
+      if (abiertas.some((c) => !c.comprobanteId)) acciones.unshift({ tipo: "ir", tab: "cuenta", label: "Pagar ahora" });
+      return { texto: lineas.join("\n"), acciones };
     }
 
     if (tiene(/\b(yape|plin|tarjeta|visa|efectivo|formas? de pago|metodos? de pago|como pago|aceptan)\b/))
       return { texto: `Puedes pagar desde tu celular con ${METODOS_ONLINE.join(", ")} en la pestaña "Cuenta y pago", o pagar en caja en efectivo o tarjeta.` };
 
     if (tiene(/\b(la cuenta|cuanto debo|cuanto es|cuanto va|cuanto sale todo|pagar|cobrar|total)\b/)) {
-      const total = calcularTotales(consolidar(abiertas)).total;
+      const total = calcularTotales(consolidar(abiertas.filter((c) => !c.comprobanteId))).total;   // solo lo pendiente de pago
       const enCarrito = calcularTotales(carrito).total;
       if (!total && enCarrito)
-        return { texto: `Aún no envías tu pedido a cocina: tienes ${soles(enCarrito)} en el carrito.`, acciones: [{ tipo: "carrito", label: "Ver mi pedido y enviarlo" }] };
-      if (!total) return { texto: "Tu cuenta está en S/ 0.00: aún no has pedido nada." };
-      const aviso = enCarrito ? `\nAdemás tienes ${soles(enCarrito)} en tu carrito que aún no envías a cocina.` : "";
-      return { texto: `Tu cuenta va en ${soles(total)} (IGV incluido). Puedes pagar desde aquí o pedirla a caja.${aviso}`,
-        acciones: [{ tipo: "ir", tab: "cuenta", label: "Ir a cuenta y pago" }] };
+        return { texto: `Aún no confirmas tu pedido: tienes ${soles(enCarrito)} en el carrito. Confírmalo y págalo para que cocina lo prepare.`, acciones: [{ tipo: "carrito", label: "Ver mi pedido y confirmarlo" }] };
+      if (!total) return { texto: abiertas.length ? "No tienes nada pendiente de pago: lo que pediste ya está pagado." : "Tu cuenta está en S/ 0.00: aún no has pedido nada." };
+      const aviso = enCarrito ? `\nAdemás tienes ${soles(enCarrito)} en tu carrito sin confirmar.` : "";
+      return { texto: `Tienes ${soles(total)} pendiente de pago (IGV incluido). Cocina prepara tu pedido apenas lo pagues, desde aquí o en caja.${aviso}`,
+        acciones: [{ tipo: "ir", tab: "cuenta", label: "Pagar ahora" }] };
     }
 
     if (tiene(/\b(boleta|factura|ruc|dni|comprobante)\b/))
       return { texto: `Emitimos boleta o factura electrónica. Para factura necesitas tu RUC, razón social y dirección fiscal. Las boletas mayores a ${soles(LIMITE_DNI)} requieren DNI. Lo eliges al pagar en "Cuenta y pago".`,
-        acciones: [{ tipo: "ir", tab: "cuenta", label: "Ir a cuenta y pago" }] };
+        acciones: [{ tipo: "ir", tab: "cuenta", label: "Ir a pagar" }] };
 
     // --- información del local ---
     if (tiene(/\b(horario|hora|abren|cierran|atienden|abierto)\b/)) return { texto: `Nuestro horario: ${NEGOCIO.horario}` };
@@ -138,7 +141,7 @@ export function responderBot(texto, { productos, mesa, abiertas = [], carrito = 
       if (pedido.length) {
         const total = pedido.reduce((a, x) => a + x.producto.precio * x.cant, 0);
         r.texto = "Entendí:\n" + pedido.map((x) => `• ${x.cant} × ${x.producto.nombre} (${soles(x.producto.precio * x.cant)})`).join("\n") +
-          `\nTotal: ${soles(total)}. ¿Lo agrego a tu pedido?`;
+          `\nTotal: ${soles(total)}. ¿Lo agrego a tu pedido? Cocina lo prepara cuando lo pagues.`;
         r.pedido = pedido;
       }
       if (dudas.length) {

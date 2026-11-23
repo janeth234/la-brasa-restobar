@@ -1,8 +1,8 @@
 # La Brasa Restobar — POS web con carta QR (React + Node + Supabase/PostgreSQL)
 
 Sistema web para restobar (hamburguesas, salchipapas, alitas, parrillas, gaseosas y refrescos):
-el cliente escanea el QR de su mesa **con cualquier celular**, ve la carta con fotos, pide y paga;
-el pedido llega a cocina y la caja emite **boleta o factura (RUC)**. Todo se guarda en **Supabase (PostgreSQL)**.
+el cliente escanea el QR de su mesa **con cualquier celular**, ve la carta con fotos, pide y **paga primero**
+(desde el celular o en caja, con **boleta o factura con RUC**); **recién entonces el pedido pasa a cocina**. Todo se guarda en **Supabase (PostgreSQL)**.
 
 ## Módulos
 | Vista | Quién | Qué hace |
@@ -10,9 +10,9 @@ el pedido llega a cocina y la caja emite **boleta o factura (RUC)**. Todo se gua
 | **Bot** (botón "¿Te ayudo?") | Cliente | Chat que recomienda, **toma pedidos escritos** ("2 royal y una Inca Kola grande"), dice el estado del pedido y la cuenta, responde horario/delivery/pagos y llama al mozo. Con **Ollama** conversa con IA. |
 | **Cliente** `#mesa-7` | Cliente (sin clave) | Carta con fotos, bot, pedido, seguimiento, llamar al mozo, boleta/factura, pago desde el celular o en caja, calificación. Solo ve SU mesa. |
 | **QR general** `#carta` | Cliente | El cliente elige su mesa y ve la carta. |
-| **Mozo** | Personal | Toma pedidos y ve los avisos de las mesas. |
-| **Cocina** | Personal | Pantalla oscura con cronómetro por comanda. |
-| **Caja** | Personal | Cobra, valida RUC/DNI, calcula vuelto, emite B001/F001. |
+| **Mozo** | Personal | **Alertas con sonido, vibración y notificación**: pedido listo para servir (botón Entregado), nuevo pedido por QR, mesa que llama o pide la cuenta. Registra pedidos (pasan a cocina cuando se cobran). |
+| **Cocina** | Personal | Pantalla oscura: **solo pedidos pagados**, con cronómetro desde el pago. |
+| **Caja** | Personal | Cobra lo pendiente de pago, valida RUC/DNI, calcula vuelto, emite B001/F001 y **envía el pedido a cocina**. |
 | **Comprobantes** | Personal | Historial, cierre de caja y reseñas. |
 | **Carta** | Personal | Agregar/editar productos, precios, "agotado" y **subir fotos reales**. |
 | **Mesas y QR** | Personal | QR por mesa + QR general, listos para imprimir. |
@@ -74,6 +74,8 @@ ni datos de clientes con esa clave; solo el servidor de la app accede (se conect
 (También puedes usar **New → Blueprint**: el archivo `render.yaml` ya trae esta configuración.)
 
 ### Paso D — Dejarlo listo
+0. En el celular del mozo, abre la página, entra con la clave, ve a **Mozo** y pulsa **Activar alertas con sonido**
+   (el navegador exige ese toque para permitir sonido; acepta también las notificaciones).
 1. Abre tu dirección de Render, entra con la clave.
 2. **Carta** → sube la foto de cada producto (desde el celular puedes tomarla con la cámara).
 3. **Mesas y QR** → los QR ya usan tu dirección `https://…onrender.com` → **Imprimir los QR**.
@@ -87,7 +89,9 @@ ni datos de clientes con esa clave; solo el servidor de la app accede (se conect
   La base de datos alcanza para miles de comprobantes y las fotos de la carta (cada foto ≈ 60–120 KB).
 
 ### Fotos de los productos
-Usa fotos propias de tus platos. Si usas fotos de bancos gratuitos (Pexels, Unsplash), revisa su licencia;
+La carta inicial trae su foto en `public/fotos/<id>.jpg` (por ejemplo `h1.jpg` = Hamburguesa clásica).
+Al arrancar con base de datos, si la tabla `producto_fotos` está vacía, el servidor copia esas fotos solo.
+Después se cambian desde la pestaña **Carta**. Para un negocio real, usa fotos propias de tus platos. Si usas fotos de bancos gratuitos (Pexels, Unsplash), revisa su licencia;
 no uses fotos de otros restaurantes o marcas sin permiso. La app las achica a 800 px automáticamente.
 
 ---
@@ -120,7 +124,7 @@ Render no puede ejecutar Ollama, pero sí puede usar los modelos de Ollama en la
 (Otra opción: dejar el servidor en una PC del local con Ollama y publicarlo con un túnel como Cloudflare Tunnel.)
 
 ## Base de datos (PostgreSQL / Supabase, 3FN)
-18 tablas en **Tercera Forma Normal** + 4 vistas que calculan los importes. Diagrama entidad-relación,
+18 tablas en **Tercera Forma Normal** + 5 vistas (importes, cocina, cierre de caja, carta). Diagrama entidad-relación,
 diccionario de datos y justificación de 1FN, 2FN y 3FN en **[BASE_DE_DATOS.md](BASE_DE_DATOS.md)**.
 
 - `server/schema.sql`: tablas, catálogos SUNAT, vistas y seguridad.
@@ -151,6 +155,7 @@ src/
   qr.js            generador de códigos QR propio
   components/      Bot, Plato (foto o dibujo), FormComprobante, Ticket, QR
   vistas/          Cliente, Mozo, Cocina, Caja, Historial, Productos, MesasQR
+public/fotos/      fotos de la carta inicial (<id>.jpg)
 render.yaml        configuración para Render
 ```
 

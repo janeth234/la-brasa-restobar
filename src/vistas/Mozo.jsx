@@ -2,8 +2,8 @@ import React, { useState } from "react";
 import { MESAS } from "../data.js";
 import { soles, calcularTotales, minutosDesde, categoriasDe } from "../utils.js";
 
-/* Vista del mozo: toma pedidos en mesa y atiende los llamados de los clientes */
-export default function VistaMozo({ pos }) {
+/* Vista del mozo: alertas (pedidos listos, pedidos por QR, llamados) y toma de pedidos en mesa */
+export default function VistaMozo({ pos, alertas }) {
   const [mesa, setMesa] = useState("1");
   const productos = pos.productos.filter((p) => p.disponible);
   const categorias = categoriasDe(productos);
@@ -13,8 +13,8 @@ export default function VistaMozo({ pos }) {
   const [nota, setNota] = useState("");
   const [aviso, setAviso] = useState("");
 
-  const ocupadas = new Set(pos.comandas.filter((c) => c.estado !== "pagado").map((c) => c.mesa));
-  const llamando = new Set(pos.solicitudes.map((s) => s.mesa));
+  const ocupadas = new Set(pos.comandas.map((c) => c.mesa));
+  const llamando = new Set(alertas.alertas.map((a) => a.mesa));
 
   const agregar = (p) =>
     setCarrito((c) => {
@@ -28,7 +28,7 @@ export default function VistaMozo({ pos }) {
   const enviar = () => {
     if (!carrito.length) return;
     pos.enviarACocina(mesa, carrito, nota.trim(), "mozo");
-    setAviso(`Comanda de mesa ${mesa} enviada a cocina`);
+    setAviso(`Pedido de mesa ${mesa} registrado: pasa a cocina cuando se cobre en caja`);
     setCarrito([]); setNota("");
     setTimeout(() => setAviso(""), 2500);
   };
@@ -36,16 +36,28 @@ export default function VistaMozo({ pos }) {
 
   return (
     <>
-      {pos.solicitudes.length > 0 && (
-        <section className="llamados" aria-live="polite">
-          {pos.solicitudes.map((s) => (
-            <div key={s.id} className="llamado">
-              <span><b>Mesa {s.mesa}</b> {s.tipo === "cuenta" ? "pide la cuenta (pagará en caja)" : "llama al mozo"} · hace {minutosDesde(s.creado)} min</span>
-              <button className="btn chico" onClick={() => pos.atender(s.id)}>Atendido</button>
-            </div>
-          ))}
-        </section>
-      )}
+      <section className={"panel-alertas" + (alertas.alertas.length ? " con-alertas" : "")} aria-live="polite">
+        <div className="pa-cab">
+          <h2>Alertas del mozo {alertas.alertas.length > 0 && <span className="badge">{alertas.alertas.length}</span>}</h2>
+          {alertas.sonido
+            ? <span className="pa-sonido"><span className="ok">Sonido activado</span>
+                <button className="btn chico" onClick={alertas.probar}>Probar</button>
+                <button className="btn chico" onClick={alertas.desactivarSonido}>Silenciar</button></span>
+            : <button className="btn primario corto" onClick={alertas.activarSonido}>Activar alertas con sonido</button>}
+        </div>
+        {!alertas.alertas.length && <p className="vacio">Sin alertas. Aquí aparecen los pedidos listos para servir, los pedidos nuevos por QR y las mesas que te llaman.</p>}
+        {alertas.alertas.map((a) => (
+          <article key={a.id} className={"alerta-item tipo-" + a.tipo}>
+            <span className="ai-mesa">{a.mesa}</span>
+            <span className="ai-txt">
+              <b>{a.texto}</b>
+              {a.detalle && <small>{a.detalle}</small>}
+              <small>hace {minutosDesde(a.desde)} min</small>
+            </span>
+            <button className={a.tipo === "listo" ? "btn primario corto" : "btn"} onClick={a.hacer}>{a.accion}</button>
+          </article>
+        ))}
+      </section>
       <div className="grid-mozo">
         <section className="panel">
           <h2>Mesa</h2>
@@ -57,7 +69,7 @@ export default function VistaMozo({ pos }) {
               </button>
             ))}
           </div>
-          <p className="leyenda"><span className="pto" /> cuenta abierta <span className="pto amarillo" /> está llamando</p>
+          <p className="leyenda"><span className="pto" /> cuenta abierta <span className="pto amarillo" /> tiene alerta</p>
 
           <h2>Carta</h2>
           <div className="chips">
@@ -96,7 +108,8 @@ export default function VistaMozo({ pos }) {
             <input value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej.: término medio, sin cremas" />
           </label>
           <div className="total-linea"><span>Total</span><b>{soles(total)}</b></div>
-          <button className="btn primario" disabled={!carrito.length} onClick={enviar}>Enviar a cocina</button>
+          <button className="btn primario" disabled={!carrito.length} onClick={enviar}>Registrar pedido</button>
+          <p className="vacio peq">Cocina lo prepara cuando el cliente pague en caja.</p>
           {aviso && <p className="ok">{aviso}</p>}
         </aside>
       </div>

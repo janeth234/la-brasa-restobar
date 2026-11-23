@@ -116,7 +116,8 @@ export function usePOS({ rol, mesa }) {
     ...estado,
     modo, necesitaClave, errorClave, entrar, salir,
     botIA: !!(info && info.bot === "ollama"), modeloIA: info && info.modelo,
-    abiertasDe: (m) => estado.comandas.filter((c) => c.mesa === m && c.estado !== "pagado"),
+    pedidosDe: (m) => estado.comandas.filter((c) => c.mesa === m),                 // por pagar y en cocina
+    porPagarDe: (m) => estado.comandas.filter((c) => c.mesa === m && !c.comprobanteId),
     enviarACocina: (m, items, nota, origen) => enSegundoPlano("enviarACocina", { mesa: m, items, nota, origen }),
     cambiarEstado: (id, est) => enSegundoPlano("cambiarEstado", { id, estado: est }),
     solicitar: (m, tipo, datos) => enSegundoPlano("solicitar", { mesa: m, tipo, datos }),

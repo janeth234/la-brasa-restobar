@@ -143,7 +143,8 @@ CREATE TABLE IF NOT EXISTS pagos (
 -- 4. PEDIDOS (COMANDAS)
 -- =====================================================================
 
--- Una mesa puede tener varias comandas; al cobrar, todas apuntan al mismo comprobante
+-- Una mesa puede tener varias comandas; al cobrar, las pendientes apuntan al mismo comprobante.
+-- REGLA: cocina solo prepara comandas pagadas (comprobante_id NOT NULL).
 CREATE TABLE IF NOT EXISTS comandas (
   id                 VARCHAR(20)  PRIMARY KEY,
   mesa_id            SMALLINT     NOT NULL REFERENCES mesas(id),
@@ -152,9 +153,21 @@ CREATE TABLE IF NOT EXISTS comandas (
   nota               VARCHAR(200) NOT NULL DEFAULT '',
   creado             TIMESTAMPTZ  NOT NULL DEFAULT now(),
   actualizado        TIMESTAMPTZ  NOT NULL DEFAULT now(),
-  comprobante_id     VARCHAR(20)  REFERENCES comprobantes(id)  -- NULL = cuenta abierta
+  comprobante_id     VARCHAR(20)  REFERENCES comprobantes(id),  -- NULL = pendiente de pago
+  -- no se puede avanzar en cocina sin haber pagado
+  CONSTRAINT comanda_pagada_para_cocina CHECK (estado = 'nuevo' OR comprobante_id IS NOT NULL)
 );
+-- Para bases ya creadas con una versión anterior: agrega la regla si falta
+-- (NOT VALID: no revisa pedidos de prueba antiguos, sí todos los nuevos)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'comanda_pagada_para_cocina') THEN
+    ALTER TABLE comandas ADD CONSTRAINT comanda_pagada_para_cocina
+      CHECK (estado = 'nuevo' OR comprobante_id IS NOT NULL) NOT VALID;
+  END IF;
+END $$;
 CREATE INDEX IF NOT EXISTS idx_comandas_abiertas ON comandas (mesa_id) WHERE comprobante_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_comandas_cocina ON comandas (estado) WHERE comprobante_id IS NOT NULL AND estado <> 'entregado';
 CREATE INDEX IF NOT EXISTS idx_comandas_comprobante ON comandas (comprobante_id);
 
 -- precio_unitario: precio cobrado en ese momento (dato histórico: el precio del producto puede cambiar)
@@ -243,6 +256,21 @@ LEFT JOIN mesa m          ON m.comprobante_id = c.id
 LEFT JOIN clientes cl     ON cl.id = c.cliente_id
 LEFT JOIN tipos_documento td ON td.codigo = cl.tipo_documento;
 
+-- Pantalla de cocina: solo comandas pagadas y no entregadas, con minutos desde el pago
+CREATE OR REPLACE VIEW v_cocina AS
+SELECT co.id, co.mesa_id, co.estado, ec.descripcion AS estado_nombre, co.origen, co.nota,
+       cp.fecha_emision AS pagado_en,
+       FLOOR(EXTRACT(EPOCH FROM (now() - cp.fecha_emision)) / 60)::INTEGER AS minutos,
+       STRING_AGG(ci.cantidad || ' x ' || p.nombre, ', ' ORDER BY p.nombre) AS productos
+FROM comandas co
+JOIN comprobantes cp    ON cp.id = co.comprobante_id
+JOIN estados_comanda ec ON ec.codigo = co.estado
+JOIN comanda_items ci   ON ci.comanda_id = co.id
+JOIN productos p        ON p.id = ci.producto_id
+WHERE co.estado <> 'entregado'
+GROUP BY co.id, ec.descripcion, ec.orden, cp.fecha_emision
+ORDER BY ec.orden, cp.fecha_emision;
+
 -- Ventas por día y método de pago (cierre de caja)
 CREATE OR REPLACE VIEW v_cierre_caja AS
 SELECT (c.fecha_emision AT TIME ZONE 'America/Lima')::DATE AS dia,
@@ -288,7 +316,7 @@ BEGIN
       EXECUTE format('REVOKE ALL ON TABLE public.%I FROM authenticated', t);
     END IF;
   END LOOP;
-  FOREACH t IN ARRAY ARRAY['v_comprobante_detalle', 'v_comprobantes', 'v_cierre_caja', 'v_carta'] LOOP
+  FOREACH t IN ARRAY ARRAY['v_comprobante_detalle', 'v_comprobantes', 'v_cierre_caja', 'v_carta', 'v_cocina'] LOOP
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
       EXECUTE format('REVOKE ALL ON public.%I FROM anon', t);
     END IF;
@@ -302,3 +330,4 @@ ALTER VIEW v_comprobante_detalle SET (security_invoker = on);
 ALTER VIEW v_comprobantes SET (security_invoker = on);
 ALTER VIEW v_cierre_caja SET (security_invoker = on);
 ALTER VIEW v_carta SET (security_invoker = on);
+ALTER VIEW v_cocina SET (security_invoker = on);

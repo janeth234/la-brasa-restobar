@@ -32,7 +32,7 @@ export default function Bot({ productos, mesa, abiertas, carrito, ia, modeloIA, 
       .filter((x) => x.producto);
     const acciones = [];
     if (j.accion === "mozo") acciones.push({ tipo: "mozo", label: "Sí, llamar al mozo" });
-    if (j.accion === "cuenta") acciones.push({ tipo: "ir", tab: "cuenta", label: "Ir a cuenta y pago" });
+    if (j.accion === "cuenta") acciones.push({ tipo: "ir", tab: "cuenta", label: "Ir a pagar" });
     if (j.accion === "pedidos") acciones.push({ tipo: "ir", tab: "pedidos", label: "Ver mis pedidos" });
     const platos = (j.mostrar || []).map((id) => productos.find((p) => p.id === id && p.disponible)).filter(Boolean);
     return { texto: j.texto, pedido: pedido.length ? pedido : undefined, platos: platos.length ? platos : undefined, acciones };
@@ -61,8 +61,8 @@ export default function Bot({ productos, mesa, abiertas, carrito, ia, modeloIA, 
     pedido.forEach((x) => onAgregar(x.producto, x.cant, true));
     setMsgs((ms) => ms.map((m, k) => (k === i ? { ...m, hecho: true } : m)));
     agregarBot({
-      texto: "Listo, lo agregué a tu pedido. Cuando quieras, revísalo y envíalo a cocina.",
-      acciones: [{ tipo: "carrito", label: "Ver mi pedido y enviarlo" }],
+      texto: "Listo, lo agregué. Revisa tu pedido, confírmalo y págalo: cocina lo prepara apenas pagues.",
+      acciones: [{ tipo: "carrito", label: "Ver mi pedido y confirmarlo" }],
     });
   };
 
@@ -91,7 +91,7 @@ export default function Bot({ productos, mesa, abiertas, carrito, ia, modeloIA, 
                 <div key={p.id} className="reco">
                   <Plato arte={p.arte} foto={p.foto} size={48} />
                   <span><b>{p.nombre}</b><small>{soles(p.precio)}</small></span>
-                  <button className="btn chico" onClick={() => { onAgregar(p, 1, true); agregarBot({ texto: `Agregué 1 × ${p.nombre}.`, acciones: [{ tipo: "carrito", label: "Ver mi pedido y enviarlo" }] }); }}>Agregar</button>
+                  <button className="btn chico" onClick={() => { onAgregar(p, 1, true); agregarBot({ texto: `Agregué 1 × ${p.nombre}.`, acciones: [{ tipo: "carrito", label: "Ver mi pedido y confirmarlo" }] }); }}>Agregar</button>
                 </div>
               ))}
               {m.pedido && !m.hecho && (

@@ -6,7 +6,8 @@ import FormComprobante, { DATOS_VACIOS } from "../components/FormComprobante.jsx
 import ModalTicket from "../components/Ticket.jsx";
 import Bot from "../components/Bot.jsx";
 
-const PASOS = [["nuevo", "Recibido"], ["preparando", "En cocina"], ["listo", "Listo"], ["entregado", "En tu mesa"]];
+// Seguimiento: primero se paga; recién entonces cocina lo prepara
+const PASOS = [["pago", "Pagado"], ["nuevo", "En cocina"], ["preparando", "Preparando"], ["listo", "Listo"]];
 
 /* Lo que ve el cliente al escanear el QR de su mesa */
 export default function VistaCliente({ mesa, pos, onSalir }) {
@@ -24,7 +25,8 @@ export default function VistaCliente({ mesa, pos, onSalir }) {
   const [comp, setComp] = useState(null);       // comprobante emitido tras pagar
   const [verTicket, setVerTicket] = useState(false);
 
-  const abiertas = pos.abiertasDe(mesa);
+  const pedidos = pos.pedidosDe(mesa);        // por pagar y en cocina
+  const porPagar = pos.porPagarDe(mesa);      // lo que falta pagar
   const cantCarrito = carrito.reduce((a, i) => a + i.cant, 0);
   const totCarrito = calcularTotales(carrito).total;
 
@@ -42,8 +44,8 @@ export default function VistaCliente({ mesa, pos, onSalir }) {
 
   const pedir = () => {
     pos.enviarACocina(mesa, carrito, nota.trim(), "qr");
-    setCarrito([]); setNota(""); setVerCarrito(false); setTab("pedidos");
-    avisar("¡Pedido enviado a cocina!");
+    setCarrito([]); setNota(""); setVerCarrito(false); setComp(null); setTab("cuenta");
+    avisar("Pedido registrado: págalo para que cocina lo prepare");
   };
   const llamarMozo = () => { pos.solicitar(mesa, "mozo"); avisar("Avisamos al mozo, ya viene"); };
 
@@ -58,7 +60,7 @@ export default function VistaCliente({ mesa, pos, onSalir }) {
       </header>
 
       <nav className="cli-tabs">
-        {[["carta", "Carta"], ["pedidos", `Mis pedidos${abiertas.length ? " (" + abiertas.length + ")" : ""}`], ["cuenta", "Cuenta y pago"]].map(([k, l]) => (
+        {[["carta", "Carta"], ["pedidos", `Mis pedidos${pedidos.length ? " (" + pedidos.length + ")" : ""}`], ["cuenta", `Pagar${porPagar.length ? " (" + porPagar.length + ")" : ""}`]].map(([k, l]) => (
           <button key={k} className={tab === k ? "on" : ""} onClick={() => setTab(k)}>{l}</button>
         ))}
       </nav>
@@ -92,10 +94,10 @@ export default function VistaCliente({ mesa, pos, onSalir }) {
         </div>
       )}
 
-      {tab === "pedidos" && <MisPedidos abiertas={abiertas} irACarta={() => setTab("carta")} />}
+      {tab === "pedidos" && <MisPedidos pedidos={pedidos} irACarta={() => setTab("carta")} irAPagar={() => setTab("cuenta")} />}
 
       {tab === "cuenta" && (
-        <Cuenta mesa={mesa} pos={pos} abiertas={abiertas} comp={comp}
+        <Cuenta mesa={mesa} pos={pos} abiertas={porPagar} comp={comp}
           onPagado={(c) => setComp(c)} onVerTicket={() => setVerTicket(true)}
           onNuevo={() => { setComp(null); setTab("carta"); }} avisar={avisar} />
       )}
@@ -130,20 +132,20 @@ export default function VistaCliente({ mesa, pos, onSalir }) {
               <input value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Ej.: sin cebolla" />
             </label>
             <button className="btn primario" disabled={!carrito.length} onClick={pedir}>
-              Pedir · Mesa {mesa} · {soles(totCarrito)}
+              Confirmar pedido · {soles(totCarrito)}
             </button>
             <button className="btn ancho" onClick={() => setVerCarrito(false)}>Seguir viendo la carta</button>
           </div>
         </div>
       )}
 
-      {!asistente && !verCarrito && !detalle && (
+      {!asistente && !verCarrito && !detalle && tab !== "cuenta" && (
         <button className={"bot-flotante" + (cantCarrito > 0 ? " sube" : "")} onClick={() => setAsistente(true)} aria-label="Abrir el asistente">
           <span className="bot-avatar" aria-hidden="true">LB</span><span>¿Te ayudo?</span>
         </button>
       )}
       {asistente && (
-        <Bot productos={productos} mesa={mesa} abiertas={abiertas} carrito={carrito} ia={pos.botIA} modeloIA={pos.modeloIA}
+        <Bot productos={productos} mesa={mesa} abiertas={pedidos} carrito={carrito} ia={pos.botIA} modeloIA={pos.modeloIA}
           onAgregar={(p, cant) => agregar(p, cant)} onIr={setTab} onMozo={llamarMozo}
           onVerCarrito={() => setVerCarrito(true)} onCerrar={() => setAsistente(false)} />
       )}
@@ -182,8 +184,8 @@ function Detalle({ p, onCerrar, onAgregar }) {
 }
 
 /* ---------- Seguimiento del pedido ---------- */
-function MisPedidos({ abiertas, irACarta }) {
-  if (!abiertas.length)
+function MisPedidos({ pedidos, irACarta, irAPagar }) {
+  if (!pedidos.length)
     return (
       <div className="cli-cuerpo">
         <p className="vacio">Aún no pediste nada en esta mesa.</p>
@@ -192,8 +194,8 @@ function MisPedidos({ abiertas, irACarta }) {
     );
   return (
     <div className="cli-cuerpo">
-      {abiertas.map((c, n) => {
-        const idx = PASOS.findIndex(([e]) => e === c.estado);
+      {pedidos.map((c, n) => {
+        const idx = c.comprobanteId ? PASOS.findIndex(([e]) => e === c.estado) : -1;
         return (
           <article key={c.id} className="seguimiento">
             <h3>Pedido {n + 1}</h3>
@@ -201,6 +203,12 @@ function MisPedidos({ abiertas, irACarta }) {
               {PASOS.map(([e, l], i) => <li key={e} className={i <= idx ? "hecho" : ""}>{l}</li>)}
             </ol>
             <ul>{c.items.map((i) => <li key={i.id}>{i.cant}× {i.nombre}</li>)}</ul>
+            {!c.comprobanteId && (
+              <div className="pendiente-pago">
+                <p>Pendiente de pago: cocina lo prepara cuando pagues.</p>
+                <button className="btn primario" onClick={irAPagar}>Pagar ahora</button>
+              </div>
+            )}
           </article>
         );
       })}
@@ -220,7 +228,6 @@ function Cuenta({ mesa, pos, abiertas, comp, onPagado, onVerTicket, onNuevo, avi
 
   const items = consolidar(abiertas);
   const tot = calcularTotales(items);
-  const enCocina = abiertas.some((c) => c.estado === "nuevo" || c.estado === "preparando");
   const yaPidio = pos.solicitudes.some((s) => s.mesa === mesa && s.tipo === "cuenta");
 
   if (comp) {
@@ -229,6 +236,7 @@ function Cuenta({ mesa, pos, abiertas, comp, onPagado, onVerTicket, onNuevo, avi
         <div className="check" aria-hidden="true">✓</div>
         <h2 className="titulo-pago">Pago aprobado</h2>
         <p className="vacio">Mesa {comp.mesa} · {soles(comp.total)} · {comp.pago.metodo}</p>
+        <p className="ok">Tu pedido ya pasó a cocina. Síguelo en "Mis pedidos".</p>
         <button className="btn ancho" onClick={onVerTicket}>
           Ver mi {comp.tipo === "factura" ? "factura" : "boleta"} {comp.serie}-{comp.numero}
         </button>
@@ -259,7 +267,7 @@ function Cuenta({ mesa, pos, abiertas, comp, onPagado, onVerTicket, onNuevo, avi
   }
 
   if (!items.length)
-    return <div className="cli-cuerpo"><p className="vacio">Tu cuenta está vacía. Cuando pidas algo, aparecerá aquí.</p></div>;
+    return <div className="cli-cuerpo"><p className="vacio">No tienes nada pendiente de pago. Cuando pidas algo de la carta, aparecerá aquí para pagarlo.</p></div>;
 
   const pagarOnline = () => {
     const err = validarCliente(datos, tot.total);
@@ -284,13 +292,13 @@ function Cuenta({ mesa, pos, abiertas, comp, onPagado, onVerTicket, onNuevo, avi
     if (err) return setError(err);
     setError("");
     pos.solicitar(mesa, "cuenta", datos);
-    avisar("Avisamos a caja: el mozo te trae tu comprobante");
+    avisar("Avisamos a caja: al pagar, tu pedido pasa a cocina");
   };
 
   return (
     <div className="cli-cuerpo">
-      <h2>Tu cuenta · Mesa {mesa}</h2>
-      {enCocina && <p className="alerta">Algunos platos todavía se están preparando.</p>}
+      <h2>Por pagar · Mesa {mesa}</h2>
+      <p className="alerta">Cocina prepara tu pedido apenas lo pagues.</p>
       <ul className="lineas">
         {items.map((i) => (
           <li key={i.id} className="sin-cant">
@@ -320,7 +328,7 @@ function Cuenta({ mesa, pos, abiertas, comp, onPagado, onVerTicket, onNuevo, avi
       </button>
       <p className="vacio peq">Pago simulado para la demo.</p>
       <button className="btn ancho" disabled={yaPidio} onClick={pagarEnCaja}>
-        {yaPidio ? "Ya pediste la cuenta a caja" : "Prefiero pagar en caja / efectivo"}
+        {yaPidio ? "Ya avisamos a caja: paga ahí para que cocina empiece" : "Prefiero pagar en caja / efectivo"}
       </button>
     </div>
   );

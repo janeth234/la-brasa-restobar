@@ -5,7 +5,8 @@ const reloj = (iso) => {
   return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
 };
 
-/* Pantalla de cocina (KDS): las comandas llegan solas desde el mozo o el QR */
+/* Pantalla de cocina (KDS): solo llegan las comandas YA PAGADAS (mozo o QR).
+   El cronómetro cuenta desde el pago. */
 export default function VistaCocina({ pos }) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -21,20 +22,21 @@ export default function VistaCocina({ pos }) {
   return (
     <div className="kds">
       {columnas.map(([estado, titulo, accion, siguiente]) => {
-        const lista = pos.comandas.filter((c) => c.estado === estado);
+        const lista = pos.comandas.filter((c) => c.comprobanteId && c.estado === estado);
         return (
           <section key={estado} className={"col col-" + estado}>
             <h2>{titulo} <span className="badge">{lista.length}</span></h2>
             {!lista.length && <p className="vacio">Sin comandas</p>}
             {lista.map((c) => {
-              const tarde = (Date.now() - new Date(c.creado).getTime()) / 60000 >= 15 && estado !== "listo";
+              const desde = c.pagadoEn || c.creado;
+              const tarde = (Date.now() - new Date(desde).getTime()) / 60000 >= 15 && estado !== "listo";
               return (
                 <article key={c.id} className={"ticket-cocina" + (tarde ? " tarde" : "")}>
                   <header>
                     <b>Mesa {c.mesa}</b>
-                    <span className="reloj">{reloj(c.creado)}</span>
+                    <span className="reloj">{reloj(desde)}</span>
                   </header>
-                  <p className="origen">{c.origen === "qr" ? "Pedido por QR" : "Tomado por el mozo"}</p>
+                  <p className="origen">Pagado · {c.origen === "qr" ? "pedido por QR" : "tomado por el mozo"}</p>
                   <ul>
                     {c.items.map((i) => (
                       <li key={i.id}><b>{i.cant}×</b> {i.nombre}</li>
